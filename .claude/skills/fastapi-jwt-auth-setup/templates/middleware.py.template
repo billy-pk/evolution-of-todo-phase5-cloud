@@ -1,0 +1,132 @@
+"""
+JWT Authentication Middleware for FastAPI
+
+Validates JWT tokens using JWKS (JSON Web Key Set) from auth provider.
+Supports EdDSA, ES256, and RS256 algorithms.
+Extracts user_id from JWT payload and adds to request.state.
+"""
+
+from fastapi import Request, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import jwt
+from jwt import PyJWKClient
+from config import settings
+from typing import Optional
+
+
+class JWTBearer(HTTPBearer):
+    """
+    HTTP Bearer authentication scheme that validates JWT tokens.
+
+    This middleware:
+    1. Extracts the Bearer token from Authorization header
+    2. Validates JWT signature using JWKS public key
+    3. Checks expiration time
+    4. Extracts user_id from payload
+    5. Adds user_id to request.state for route handlers
+
+    Usage:
+        @app.get("/protected", dependencies=[Depends(JWTBearer())])
+        async def protected_route(request: Request):
+            user_id = request.state.user_id
+            return {"user_id": user_id}
+    """
+
+    def __init__(self, auto_error: bool = True):
+        super(JWTBearer, self).__init__(auto_error=auto_error)
+
+    async def __call__(self, request: Request):
+        credentials: HTTPAuthorizationCredentials = await super(JWTBearer, self).__call__(request)
+
+        if credentials:
+            if not credentials.scheme == "Bearer":
+                raise HTTPException(
+                    status_code=401,
+                    detail="Invalid authentication scheme. Use 'Bearer <token>'"
+                )
+
+            token = credentials.credentials
+            user_id = verify_token(token)
+
+            if not user_id:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Invalid or expired token"
+                )
+
+            # Add user_id to request state for later use in route handlers
+            request.state.user_id = user_id
+            return credentials.credentials
+        else:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing authorization credentials"
+            )
+
+
+# Initialize JWKS client to fetch public keys from auth provider
+# Customize JWKS_URL based on your auth provider:
+# - Better Auth: {BETTER_AUTH_URL}/api/auth/jwks
+# - Auth0: https://{domain}/.well-known/jwks.json
+# - Clerk: https://{domain}/.well-known/jwks.json
+JWKS_URL = getattr(settings, 'JWKS_URL', None) or f"{settings.BETTER_AUTH_URL}/api/auth/jwks"
+jwks_client = PyJWKClient(JWKS_URL)
+
+
+def verify_token(token: str) -> Optional[str]:
+    """
+    Verify the JWT token and return the user_id if valid.
+
+    Validates:
+    - JWT signature using JWKS public key
+    - Token expiration time
+    - Presence of user_id claim
+
+    Args:
+        token: JWT token string from Authorization header
+
+    Returns:
+        user_id if token is valid, None otherwise
+
+    Supported Algorithms:
+        - EdDSA: Edwards-curve Digital Signature Algorithm
+        - ES256: ECDSA with SHA-256
+        - RS256: RSA with SHA-256
+    """
+    try:
+        # Get the signing key from JWKS endpoint
+        # The PyJWKClient fetches the public key matching the token's key ID
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+
+        # Decode and verify the JWT token using the public key
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["EdDSA", "ES256", "RS256"],  # Customize based on provider
+            options={
+                "verify_exp": True,   # Verify expiration
+                "verify_aud": False,  # Don't verify audience claim (customize if needed)
+            }
+        )
+
+        # Extract user_id from the payload
+        # Customize claim name based on your auth provider:
+        # - Better Auth: "user_id"
+        # - Auth0/Clerk: "sub"
+        user_id = payload.get("user_id") or payload.get("sub")
+
+        if not user_id:
+            print(f"JWT validation error: Token missing user_id claim. Payload keys: {payload.keys()}")
+            return None
+
+        return user_id
+
+    except jwt.ExpiredSignatureError:
+        print("JWT validation error: Token has expired")
+        return None
+    except jwt.InvalidTokenError as e:
+        print(f"JWT validation error: {e}")
+        return None
+    except Exception as e:
+        print(f"JWT validation error: Unexpected error: {e}")
+        return None

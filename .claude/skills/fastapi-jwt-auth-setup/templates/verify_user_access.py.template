@@ -1,0 +1,63 @@
+"""
+User Access Verification for Multi-Tenant Applications
+
+Use this function as a FastAPI dependency to verify that the user_id
+in the URL path matches the user_id from the validated JWT token.
+"""
+
+from fastapi import Request, HTTPException, Path
+
+
+def verify_user_access(request: Request, user_id: str = Path(...)) -> str:
+    """
+    Verify user_id in URL path matches user_id from JWT token.
+
+    This dependency ensures multi-tenant isolation by preventing users
+    from accessing resources belonging to other users.
+
+    Args:
+        request: FastAPI request with user_id in state (set by JWTBearer middleware)
+        user_id: User ID from URL path parameter (e.g., /api/{user_id}/tasks)
+
+    Returns:
+        Validated user_id (safe to use for database queries)
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if user_id mismatch
+
+    Usage:
+        @router.get("/{user_id}/tasks")
+        async def get_tasks(
+            user_id: str = Depends(verify_user_access),
+            session: Session = Depends(get_session)
+        ):
+            # user_id is validated and safe to use
+            tasks = session.exec(
+                select(Task).where(Task.user_id == user_id)
+            ).all()
+            return tasks
+
+    Security Notes:
+        - Always use this dependency on routes with {user_id} in path
+        - Ensures users can only access their own resources
+        - Prevents horizontal privilege escalation attacks
+        - Returns 403 Forbidden if user_id mismatch detected
+    """
+    # Get user_id from JWT token (set by JWTBearer middleware in request.state)
+    token_user_id = getattr(request.state, "user_id", None)
+
+    # Check if user is authenticated
+    if not token_user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required"
+        )
+
+    # Verify path user_id matches JWT user_id
+    if token_user_id != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: Cannot access another user's resources"
+        )
+
+    return user_id

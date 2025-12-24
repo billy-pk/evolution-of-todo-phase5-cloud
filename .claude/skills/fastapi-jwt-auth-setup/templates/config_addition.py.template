@@ -1,0 +1,48 @@
+"""
+Configuration additions for JWT Authentication
+
+Add these fields to your existing Settings class in config.py
+"""
+
+from pydantic_settings import BaseSettings
+from typing import Optional
+
+
+class Settings(BaseSettings):
+    # ... your existing settings ...
+
+    # ===== JWT Authentication Configuration =====
+
+    # Auth Provider URL (customize based on provider)
+    # Better Auth: http://localhost:3000 (or your frontend URL)
+    # Auth0: https://your-tenant.auth0.com
+    # Clerk: https://your-instance.clerk.accounts.dev
+    BETTER_AUTH_URL: str = "http://localhost:3000"
+
+    # Shared secret for JWT validation (if using symmetric algorithms)
+    # Generate with: openssl rand -base64 32
+    BETTER_AUTH_SECRET: str
+
+    # Optional: Override JWKS URL if using custom auth provider
+    # If not set, defaults to {BETTER_AUTH_URL}/api/auth/jwks
+    JWKS_URL: Optional[str] = None
+
+    # Optional: Customize JWT user ID claim name
+    # - Better Auth: "user_id"
+    # - Auth0/Clerk: "sub"
+    # - Custom: your claim name
+    JWT_USER_ID_CLAIM: str = "user_id"
+
+    # Optional: Supported JWT algorithms
+    # - Better Auth: ["EdDSA", "ES256", "RS256"]
+    # - Auth0: ["RS256"]
+    # - Clerk: ["RS256"]
+    JWT_ALGORITHMS: list[str] = ["EdDSA", "ES256", "RS256"]
+
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+
+# Singleton instance
+settings = Settings()
