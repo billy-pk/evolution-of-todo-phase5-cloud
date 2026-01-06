@@ -1,0 +1,381 @@
+# Evolution of Todo — Phase V Specification
+## Advanced Event-Driven, Cloud-Native & Dapr-Enabled Todo System
+
+---
+
+## 1. Overview
+
+This document defines the **functional, architectural, and deployment specifications** for **Phase V** of the Evolution of Todo project.
+
+Phase V converts the application into a:
+
+- event-driven system
+- microservices-capable architecture
+- Kubernetes-native deployment
+- Dapr-enabled runtime
+- Oracle OKE cloud application
+- Kafka-compatible Redpanda based messaging platform
+
+Development must strictly follow:
+
+- Spec → Plan → Tasks → Claude Code → Implementation
+- **no manual coding**
+
+---
+
+## 2. Goals and Outcomes
+
+### Primary Goals
+
+- implement **advanced Todo features**
+- move to **event-driven architecture**
+- use **Redpanda (Kafka compatible)**
+- abstract dependencies using **Dapr**
+- deploy locally on **Minikube**
+- deploy to cloud on **Oracle Kubernetes Engine (OKE)**
+
+### Secondary Goals
+
+- CI/CD via GitHub Actions
+- logging & monitoring enabled
+- cloud-agnostic design
+- microservices ready
+
+---
+
+## 3. Functional Feature Specifications
+
+### 3.1 Advanced Level Features (Mandatory)
+
+#### Recurring Tasks
+
+A task may repeat:
+
+- daily
+- weekly
+- monthly
+- custom interval (optional)
+
+System must:
+
+- detect completion of recurring task
+- automatically create next instance
+- preserve metadata (priority, tags, etc.)
+
+#### Due Dates
+
+- due date stored as ISO8601 datetime string
+- validation:
+  - must not be in past unless explicitly allowed
+- UI/chat must support:
+  - “task due tomorrow at 5pm”
+  - “set due date to next Monday”
+
+#### Reminders
+
+- one or more reminders per task
+- delivery through:
+
+  - notification service
+  - chat message or webhook (implementation dependent)
+
+- scheduled using:
+  - **Dapr Jobs API** (preferred)
+  - OR cron binding fallback
+
+---
+
+### 3.2 Intermediate Level Features
+
+#### Priorities
+
+Values:
+
+- low
+- normal
+- high
+- optional: critical
+
+Priority applied to:
+
+- tasks
+- recurring instances
+
+#### Tags
+
+- multiple tags per task
+- examples:
+  - `work`, `personal`, `urgent`
+- used for search & filter
+
+#### Search
+
+Users can search by:
+
+- title
+- description
+- tags
+- priority
+- status
+
+#### Filter
+
+Filters include:
+
+- completed / pending
+- overdue
+- due today / this week
+- by priority
+- by tag
+
+#### Sort
+
+Sort by:
+
+- creation date
+- due date
+- priority
+- last updated
+
+Default sort: **due soonest first**
+
+---
+
+## 4. Event-Driven Architecture Specification
+
+System shifts from request-response CRUD to **event-driven microservices**.
+
+### 4.1 Event Topics (Redpanda / Kafka)
+
+| Topic Name | Description |
+|-----------|-------------|
+| task-events | all task actions |
+| reminders | reminder scheduling and firing |
+| task-updates | UI sync broadcast |
+| audit-log | persistent history (optional) |
+
+### 4.2 Event Types
+
+- task.created
+- task.updated
+- task.deleted
+- task.completed
+- recurring.generated
+- reminder.scheduled
+- reminder.due
+- notification.sent
+
+### 4.3 Event Envelope Schema
+
+```json
+{
+  "event_type": "task.created",
+  "task_id": "string",
+  "user_id": "string",
+  "task_data": {},
+  "timestamp": "ISO8601"
+}
+```
+
+---
+
+## 5. Dapr Integration Specification
+
+Dapr MUST be used for all external building blocks.
+
+### 5.1 Required Components
+
+| Dapr Building Block | Purpose |
+|----------------------|---------|
+| Pub/Sub | Redpanda (Kafka API) |
+| State Store | Postgres (Neon or cloud Postgres) |
+| Jobs API | reminders & recurring tasks |
+| Secrets | API keys & DB credentials |
+| Service Invocation | synchronous cross-service calls |
+
+### 5.2 Pub/Sub Requirement
+
+Application **must not import Kafka client SDKs directly**
+
+All messaging MUST go through:
+
+```
+/v1.0/publish/{pubsub_name}/{topic}
+```
+
+### 5.3 Local vs Cloud Pub/Sub configuration
+
+| Environment | Backend | Description |
+|-------------|--------|-------------|
+| Local Dev | Redpanda Docker | No auth |
+| Cloud | Redpanda Cloud | SASL/SSL secured |
+
+Application code remains identical.  
+Only Dapr component YAML changes ✔
+
+---
+
+## 6. Microservice Logical Components
+
+### Required Services
+
+1. Todo / Chat API Service
+2. Notification Service
+3. Recurring Task Service
+4. Audit Logging Service
+5. WebSocket Broadcast Service
+6. Frontend Client
+
+Each MUST:
+
+- run in a container
+- have Kubernetes deployment
+- have Dapr sidecar
+
+---
+
+## 7. Database Specification
+
+Database engine:
+
+- **Neon PostgreSQL**
+
+Stores:
+
+- users (if applicable)
+- tasks
+- recurrence rules
+- reminders
+- audit history
+
+State caching optionally through Dapr State Store.
+
+---
+
+## 8. Deployment Environments
+
+### 8.1 Local Environment
+
+- Kubernetes: **Minikube**
+- Messaging: **Redpanda Docker container**
+- DB: Neon or local Postgres
+- Dapr: Kubernetes mode
+
+### 8.2 Cloud Environment
+
+- Provider: **Oracle Cloud Infrastructure (OCI)**
+- Service: **Oracle Kubernetes Engine (OKE)**
+- Messaging: **Redpanda Cloud Serverless**
+- DB: Neon Cloud
+- Dapr installed cluster-wide
+
+---
+
+## 9. CI/CD Specification
+
+Platform:
+
+- GitHub Actions
+
+Pipeline stages:
+
+1. run unit tests
+2. build containers
+3. push to container registry
+4. deploy Helm chart to:
+
+- Minikube (optional)
+- OKE cluster (mandatory)
+
+Rollbacks:
+
+- Helm rollback supported
+
+---
+
+## 10. Non-Functional Requirements
+
+### Performance
+
+- reminder trigger accuracy: ± 30 seconds
+- UI update latency target: < 2 seconds
+
+### Reliability
+
+- system must tolerate:
+  - notification failure without losing task data
+  - restart without losing events
+
+### Security
+
+- secrets **never hardcoded**
+- use:
+  - Kubernetes Secrets
+  - or Dapr secrets API
+
+---
+
+## 11. Acceptance Criteria
+
+Phase V is considered complete only if all conditions below are met:
+
+- recurring tasks work
+- reminders fire automatically
+- tasks support tags, sorting, searching, priority
+- Redpanda Docker works locally
+- Redpanda Cloud works in OKE
+- Dapr is used (not raw SDKs)
+- Minikube deployment works
+- OKE deployment works
+- CI/CD pipeline operational
+- documentation exists
+- constitution complied with
+
+---
+
+## 12. Deliverables
+
+- Phase V constitution.md
+- Phase V specs.md 
+- Helm charts for all services
+- Kubernetes manifests if used
+- Dapr component YAML files
+- GitHub Actions pipeline
+- working application URLs
+
+---
+
+## 13. Out of Scope (explicit)
+
+The following are NOT required for Phase V:
+
+- mobile applications
+- real e-mail/SMS providers (mock ok)
+- billing/multi-tenant SAAS features
+- multi-region clusters
+
+---
+
+## 14. Future Extensions (Phase VI+ Ideas)
+
+- real notification providers (Twilio/email)
+- AI-based smart scheduling
+- OpenTelemetry tracing
+- global multi-cluster sync
+- analytics dashboards
+
+---
+
+## 15. Conclusion
+
+This specification formally defines the scope and requirements for **Phase V of Evolution of Todo**.
+
+The system delivered must be:
+
+- event-driven
+- cloud-native
+- Kubernetes-based
+- Dapr-enabled
+- deployed to Oracle OKE
+- powered by Redpanda locally & in cloud
+- built via agentic, spec-driven workflow
