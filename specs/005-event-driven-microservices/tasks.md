@@ -30,9 +30,9 @@ This project uses a monorepo structure:
 - [X] T001 Create services/ directory structure for microservices (notification-service, recurring-task-service, audit-service, websocket-service)
 - [X] T002 Create infrastructure/ directory structure (helm/, dapr-components/, scripts/)
 - [X] T003 [P] Create Alembic migrations directory in backend/migrations/
-- [ ] T004 [P] Initialize Python virtual environments for all microservices (services/*/requirements.txt with Dapr SDK, FastAPI, SQLModel)
-- [ ] T005 [P] Create Dockerfiles for all 6 services (backend, frontend, notification-service, recurring-task-service, audit-service, websocket-service)
-- [ ] T006 [P] Configure linting and formatting for microservices (ruff, black, mypy)
+- [X] T004 [P] Initialize Python virtual environments for all microservices (services/*/requirements.txt with Dapr SDK, FastAPI, SQLModel)
+- [X] T005 [P] Create Dockerfiles for all 6 services (backend, frontend, notification-service, recurring-task-service, audit-service, websocket-service)
+- [X] T006 [P] Configure linting and formatting for microservices (ruff, black, mypy)
 
 ---
 
@@ -44,45 +44,45 @@ This project uses a monorepo structure:
 
 ### Database Schema
 
-- [ ] T007 Create Alembic migration 001_add_advanced_features.py to add columns to tasks table (priority, tags, due_date, recurrence_id)
-- [ ] T008 Create Alembic migration 002_create_recurrence_rules.py to create recurrence_rules table
-- [ ] T009 Create Alembic migration 003_create_reminders.py to create reminders table
-- [ ] T010 Create Alembic migration 004_create_audit_log.py to create audit_log table
-- [ ] T011 Run database migrations and verify schema changes applied
+- [X] T007 Create Alembic migration 001_add_advanced_features.py to add columns to tasks table (priority, tags, due_date, recurrence_id)
+- [X] T008 Create Alembic migration 002_create_recurrence_rules.py to create recurrence_rules table
+- [X] T009 Create Alembic migration 003_create_reminders.py to create reminders table
+- [X] T010 Create Alembic migration 004_create_audit_log.py to create audit_log table
+- [X] T011 Run database migrations and verify schema changes applied
 
 ### Extended Models
 
-- [ ] T012 [P] Extend Task model in backend/models.py (add priority, tags, due_date, recurrence_id fields, configure updated_at with onupdate trigger)
-- [ ] T013 [P] Create RecurrenceRule model in backend/models.py
-- [ ] T014 [P] Create Reminder model in backend/models.py
-- [ ] T015 [P] Create AuditLog model in backend/models.py
+- [X] T012 [P] Extend Task model in backend/models.py (add priority, tags, due_date, recurrence_id fields, configure updated_at with onupdate trigger)
+- [X] T013 [P] Create RecurrenceRule model in backend/models.py
+- [X] T014 [P] Create Reminder model in backend/models.py
+- [X] T015 [P] Create AuditLog model in backend/models.py
 
 ### Event Schemas and Dapr Components
 
-- [ ] T016 [P] Create task-events.schema.json in specs/005-event-driven-microservices/contracts/events/
-- [ ] T017 [P] Create reminders.schema.json in specs/005-event-driven-microservices/contracts/events/
-- [ ] T018 [P] Create task-updates.schema.json in specs/005-event-driven-microservices/contracts/events/
-- [ ] T019 [P] Create local Dapr pubsub-redpanda.yaml in specs/005-event-driven-microservices/contracts/dapr-components/local/
-- [ ] T020 [P] Create local Dapr statestore-postgresql.yaml in specs/005-event-driven-microservices/contracts/dapr-components/local/
-- [ ] T021 [P] Create local Dapr jobs.yaml in specs/005-event-driven-microservices/contracts/dapr-components/local/
-- [ ] T022 [P] Create local Dapr secrets.yaml in specs/005-event-driven-microservices/contracts/dapr-components/local/
-- [ ] T023 [P] Create cloud Dapr pubsub-redpanda-cloud.yaml in specs/005-event-driven-microservices/contracts/dapr-components/cloud/
-- [ ] T024 [P] Create cloud Dapr statestore-postgresql.yaml in specs/005-event-driven-microservices/contracts/dapr-components/cloud/
-- [ ] T025 [P] Create cloud Dapr jobs.yaml in specs/005-event-driven-microservices/contracts/dapr-components/cloud/
-- [ ] T026 [P] Create cloud Dapr secrets.yaml in specs/005-event-driven-microservices/contracts/dapr-components/cloud/
+- [X] T016 [P] Create task-events.schema.json in specs/005-event-driven-microservices/contracts/events/
+- [X] T017 [P] Create reminders.schema.json in specs/005-event-driven-microservices/contracts/events/
+- [X] T018 [P] Create task-updates.schema.json in specs/005-event-driven-microservices/contracts/events/
+- [X] T019 [P] Create local Dapr pubsub-redpanda.yaml in specs/005-event-driven-microservices/contracts/dapr-components/local/
+- [X] T020 [P] Create local Dapr statestore-postgresql.yaml in specs/005-event-driven-microservices/contracts/dapr-components/local/
+- [X] T021 [P] Create local Dapr jobs.yaml in specs/005-event-driven-microservices/contracts/dapr-components/local/
+- [X] T022 [P] Create local Dapr secrets.yaml in specs/005-event-driven-microservices/contracts/dapr-components/local/
+- [X] T023 [P] Create cloud Dapr pubsub-redpanda-cloud.yaml in specs/005-event-driven-microservices/contracts/dapr-components/cloud/
+- [X] T024 [P] Create cloud Dapr statestore-postgresql.yaml in specs/005-event-driven-microservices/contracts/dapr-components/cloud/
+- [X] T025 [P] Create cloud Dapr jobs.yaml in specs/005-event-driven-microservices/contracts/dapr-components/cloud/
+- [X] T026 [P] Create cloud Dapr secrets.yaml in specs/005-event-driven-microservices/contracts/dapr-components/cloud/
 
 ### Event Publishing Infrastructure
 
-- [ ] T027 Create EventPublisher service in backend/services/event_publisher.py (Dapr Pub/Sub client wrapper)
-- [ ] T028 Create event payload schemas in backend/schemas.py (TaskEventPayload, ReminderEventPayload, TaskUpdatePayload)
-- [ ] T029 Integrate Dapr client in backend/main.py (initialize DaprClient singleton)
-- [ ] T030 Add event publishing to existing task endpoints in backend/routes/chat.py (publish task.created, task.updated, task.completed, task.deleted events) **[Depends on T027-T029]**
+- [X] T027 Create EventPublisher service in backend/services/event_publisher.py (Dapr Pub/Sub client wrapper)
+- [X] T028 Create event payload schemas in backend/schemas.py (TaskEventPayload, ReminderEventPayload, TaskUpdatePayload)
+- [X] T029 Integrate Dapr client in backend/main.py (initialize DaprClient singleton)
+- [X] T030 Add event publishing to existing task endpoints in backend/routes/chat.py (publish task.created, task.updated, task.completed, task.deleted events) **[Depends on T027-T029]**
 
 ### Contract Tests
 
-- [ ] T031 [P] Create contract test for task-events schema in backend/tests/contract/test_task_events_schema.py
-- [ ] T032 [P] Create contract test for reminders schema in backend/tests/contract/test_reminders_schema.py
-- [ ] T033 [P] Create contract test for task-updates schema in backend/tests/contract/test_task_updates_schema.py
+- [X] T031 [P] Create contract test for task-events schema in backend/tests/contract/test_task_events_schema.py
+- [X] T032 [P] Create contract test for reminders schema in backend/tests/contract/test_reminders_schema.py
+- [X] T033 [P] Create contract test for task-updates schema in backend/tests/contract/test_task_updates_schema.py
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -98,22 +98,22 @@ This project uses a monorepo structure:
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T034 [P] [US1] Integration test for recurring task creation in backend/tests/integration/test_recurring_task_creation.py
-- [ ] T035 [P] [US1] Integration test for recurring task generation in backend/tests/integration/test_recurring_task_generation.py
-- [ ] T036 [P] [US1] Unit test for recurrence pattern calculation in backend/tests/unit/test_recurrence_logic.py
+- [X] T034 [P] [US1] Integration test for recurring task creation in backend/tests/integration/test_recurring_task_creation.py
+- [X] T035 [P] [US1] Integration test for recurring task generation in backend/tests/integration/test_recurring_task_generation.py
+- [X] T036 [P] [US1] Unit test for recurrence pattern calculation in backend/tests/unit/test_recurrence_logic.py
 
 ### Implementation for User Story 1
 
-- [ ] T037 [US1] Extend MCP tool add_task in backend/tools/server.py to accept recurrence parameters (pattern, interval)
-- [ ] T038 [US1] Extend MCP tool update_task in backend/tools/server.py to support updating recurrence rules
-- [ ] T039 [US1] Create RecurrenceService in backend/services/recurrence_service.py (calculate next occurrence, validate patterns)
-- [ ] T040 [US1] Update task creation logic in backend/tools/server.py to create RecurrenceRule when recurrence specified
-- [ ] T041 [US1] Create Recurring Task Service main file in services/recurring-task-service/recurring_task_service.py
-- [ ] T042 [US1] Implement Dapr Pub/Sub subscription to task-events topic in services/recurring-task-service/recurring_task_service.py
-- [ ] T043 [US1] Implement task.completed event handler in services/recurring-task-service/recurring_task_service.py (check recurrence, generate next instance)
-- [ ] T044 [US1] Implement idempotent next instance creation logic in services/recurring-task-service/recurring_task_service.py (database state reconciliation)
-- [ ] T045 [US1] Add validation for recurrence patterns in backend/services/recurrence_service.py (daily: 1-365, weekly: 1-52, monthly: 1-12)
-- [ ] T046 [US1] Add logging for recurring task operations in services/recurring-task-service/recurring_task_service.py
+- [X] T037 [US1] Extend MCP tool add_task in backend/tools/server.py to accept recurrence parameters (pattern, interval, due_date, priority, tags)
+- [X] T038 [US1] Extend MCP tool update_task in backend/tools/server.py to support updating recurrence rules (pattern, interval, due_date, priority, tags)
+- [X] T039 [US1] Create RecurrenceService in backend/services/recurrence_service.py (calculate next occurrence, validate patterns)
+- [X] T040 [US1] Update task creation logic in backend/tools/server.py to create RecurrenceRule when recurrence specified
+- [X] T041 [US1] Create Recurring Task Service main file in services/recurring-task-service/recurring_task_service.py (FastAPI app with Dapr Pub/Sub)
+- [X] T042 [US1] Implement Dapr Pub/Sub subscription to task-events topic in services/recurring-task-service/recurring_task_service.py (/dapr/subscribe endpoint)
+- [X] T043 [US1] Implement task.completed event handler in services/recurring-task-service/recurring_task_service.py (process_recurring_task function with RecurrenceService)
+- [X] T044 [US1] Implement idempotent next instance creation logic in services/recurring-task-service/recurring_task_service.py (database query to check existing next instance)
+- [X] T045 [US1] Add validation for recurrence patterns in backend/services/recurrence_service.py (daily: 1-365, weekly: 1-52, monthly: 1-12)
+- [X] T046 [US1] Add logging for recurring task operations in services/recurring-task-service/recurring_task_service.py (structured logging with correlation IDs)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - tasks can be created with recurrence and automatically generate next instances
 

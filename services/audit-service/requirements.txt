@@ -1,0 +1,28 @@
+# Audit Service Dependencies
+# Python 3.13 compatible
+
+# Core framework
+fastapi==0.125.0
+uvicorn==0.38.0
+pydantic==2.12.5
+pydantic-settings==2.12.0
+python-dotenv==1.2.1
+
+# Database ORM
+sqlmodel==0.0.27
+psycopg2-binary==2.9.11
+
+# Dapr SDK for Pub/Sub
+dapr==1.14.0
+dapr-ext-grpc==1.14.0
+
+# JWT validation (for API auth)
+pyjwt==2.10.1
+cryptography==46.0.3
+
+# Testing
+pytest==9.0.2
+pytest-asyncio==0.25.5
+
+# JSON schema validation (for event contracts)
+jsonschema==4.25.1
