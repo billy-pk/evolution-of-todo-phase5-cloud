@@ -105,15 +105,15 @@ As a user, I want to add multiple tags (e.g., "work", "personal", "urgent") to t
 
 #### Advanced Features (Mandatory)
 
-- **FR-001**: System MUST support recurring tasks with patterns: daily, weekly, monthly, and custom intervals
+- **FR-001**: System MUST support recurring tasks with patterns: daily (every N days, 1-365), weekly (every N weeks, 1-52), monthly (every N months, 1-12)
 - **FR-002**: System MUST automatically generate the next task instance when a recurring task is marked complete
 - **FR-003**: System MUST preserve all task metadata (title, description, priority, tags) when generating recurring instances
 - **FR-004**: System MUST store due dates as ISO8601 datetime strings with timezone support
 - **FR-005**: System MUST validate that due dates are not in the past unless explicitly allowed by user
 - **FR-006**: System MUST support natural language due date input (e.g., "tomorrow at 5pm", "next Monday")
 - **FR-007**: System MUST allow one or more reminders per task
-- **FR-008**: System MUST schedule reminders using Dapr Jobs API (preferred) or cron binding fallback
-- **FR-009**: System MUST deliver reminders through the notification service
+- **FR-008**: System MUST schedule reminders using Dapr Jobs API for persistent, scalable job scheduling
+- **FR-009**: System MUST deliver reminders through the notification service via webhook delivery (configurable endpoint for testing, future: email/SMS providers)
 
 #### Intermediate Features (Mandatory)
 
@@ -126,16 +126,15 @@ As a user, I want to add multiple tags (e.g., "work", "personal", "urgent") to t
 
 #### Event-Driven Architecture
 
-- **FR-016**: System MUST publish events to Redpanda topics for all task state changes
+- **FR-016**: System MUST publish events to Redpanda topics for all task state changes via Dapr Pub/Sub API (not direct Kafka/Redpanda SDK)
 - **FR-017**: System MUST use event topics: `task-events` (CRUD), `reminders` (scheduling), `task-updates` (UI sync)
-- **FR-018**: System MUST publish events via Dapr Pub/Sub API (not direct Kafka/Redpanda SDK)
-- **FR-019**: System MUST include event envelope with: event_type, task_id, user_id, task_data, timestamp
+- **FR-018**: System MUST include event envelope with: event_type, task_id, user_id, task_data, timestamp
 - **FR-020**: System MUST handle events idempotently to avoid duplicate processing
 - **FR-021**: System MUST handle out-of-order events gracefully
 
 #### Microservices Architecture
 
-- **FR-022**: System MUST implement six logical microservices: Chat/Todo API, Notification Service, Recurring Task Service, Audit Logging Service, WebSocket Broadcast Service, Frontend Client
+- **FR-022**: System MUST implement six logical microservices: Backend API (includes embedded MCP Server for chat/todo operations), Notification Service, Recurring Task Service, Audit Service, WebSocket Service, Frontend Client
 - **FR-023**: System MUST deploy each microservice as a separate container with Dapr sidecar
 - **FR-024**: System MUST use Dapr building blocks for: Pub/Sub (Redpanda), State Store (PostgreSQL), Jobs API (reminders), Secrets (credentials), Service Invocation (inter-service calls)
 - **FR-025**: Application code MUST NOT change between local (Minikube) and cloud (OKE) environments
@@ -180,7 +179,7 @@ As a user, I want to add multiple tags (e.g., "work", "personal", "urgent") to t
 - **SC-002**: Reminders trigger within ± 30 seconds of scheduled time under normal conditions
 - **SC-003**: Task metadata (title, description, priority, tags) is preserved 100% accurately when recurring instances are generated
 - **SC-004**: Search and filter operations return results within 2 seconds for task lists up to 1000 tasks
-- **SC-005**: System maintains 99.9% uptime for task CRUD operations even if notification service fails
+- **SC-005**: System maintains 99.9% uptime for task CRUD operations even if notification service fails (measured over 30-day rolling window, max 43 minutes downtime per month)
 - **SC-006**: Events flow through Redpanda with end-to-end latency under 2 seconds from write to consumer processing
 - **SC-007**: System supports at least 100 concurrent users without performance degradation
 - **SC-008**: Minikube local deployment works identically to OKE cloud deployment (feature parity)

@@ -234,7 +234,7 @@ class RecurrenceRule(SQLModel, table=True):
 ```
 
 **Field Constraints**:
-- `pattern`: Enum values: `daily`, `weekly`, `monthly`, `custom`
+- `pattern`: Enum values: `daily`, `weekly`, `monthly`
 - `interval`: Must be positive integer (1-365 for daily, 1-52 for weekly, 1-12 for monthly)
 - `metadata`: JSON object preserving task attributes to copy to next instance
 
@@ -520,8 +520,8 @@ LIMIT 100;
 
 1. **Priority**: Must be one of: `low`, `normal`, `high`, `critical`
 2. **Tags**: Max 10 tags per task; each tag max 50 characters
-3. **Due Date**: Must be in future (unless explicitly allowed for testing)
-4. **Recurrence Pattern**: Must be one of: `daily`, `weekly`, `monthly`, `custom`
+3. **Due Date**: Must be in future (unless explicitly allowed by user)
+4. **Recurrence Pattern**: Must be one of: `daily`, `weekly`, `monthly`
 5. **Recurrence Interval**: 1-365 for daily, 1-52 for weekly, 1-12 for monthly
 
 ---
