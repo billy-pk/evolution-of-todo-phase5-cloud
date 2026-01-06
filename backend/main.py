@@ -10,6 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from middleware import JWTBearer
 import logging
+from typing import Optional
+from dapr.clients import DaprClient
+from services.event_publisher import EventPublisher
+import events
 
 # Configure logging to show INFO level messages
 logging.basicConfig(
@@ -18,6 +22,11 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+# Phase V: Global Dapr client and EventPublisher instances
+# Initialized at startup, closed at shutdown
+dapr_client: Optional[DaprClient] = None
+event_publisher: Optional[EventPublisher] = None
 
 
 def create_app() -> FastAPI:
@@ -54,6 +63,47 @@ def create_app() -> FastAPI:
 
 # Create the main application instance
 app = create_app()
+
+
+# Phase V: Startup and shutdown events for Dapr client lifecycle
+@app.on_event("startup")
+async def startup_event():
+    """
+    T029: Initialize Dapr client and EventPublisher on application startup.
+
+    The Dapr client connects to the Dapr sidecar (localhost:3500 by default).
+    If Dapr is not available, the app will log a warning but continue running
+    (allows backward compatibility with Phase 3/4 without Dapr).
+    """
+    global dapr_client, event_publisher
+
+    try:
+        dapr_client = DaprClient()
+        event_publisher = EventPublisher(dapr_client)
+        events.set_event_publisher(event_publisher)  # Make available globally
+        logger.info("✓ Dapr client initialized successfully (Phase V event-driven mode enabled)")
+    except Exception as e:
+        logger.warning(f"⚠ Failed to initialize Dapr client: {e}")
+        logger.warning("Running in Phase 3/4 compatibility mode (events disabled)")
+        dapr_client = None
+        event_publisher = None
+        events.set_event_publisher(None)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    T029: Close Dapr client connection on application shutdown.
+    """
+    global dapr_client, event_publisher
+
+    if event_publisher:
+        event_publisher.close()
+        logger.info("✓ EventPublisher closed")
+
+    if dapr_client:
+        dapr_client.close()
+        logger.info("✓ Dapr client closed")
 
 
 @app.head("/health")

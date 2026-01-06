@@ -1,0 +1,21 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub
+  namespace: default
+spec:
+  type: pubsub.kafka  # Redpanda is Kafka-compatible
+  version: v1
+  metadata:
+  - name: brokers
+    value: "redpanda:9092"  # Docker service name (or localhost:9092 for direct Docker)
+  - name: authType
+    value: "none"  # No authentication for local Docker
+  - name: consumerGroup
+    value: "todo-app"  # Shared consumer group for all services
+  - name: clientId
+    value: "todo-app-client"
+  - name: initialOffset
+    value: "oldest"  # Read from beginning on first start
+  - name: maxMessageBytes
+    value: "1048576"  # 1MB max message size

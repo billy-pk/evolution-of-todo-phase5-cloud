@@ -1,0 +1,56 @@
+[project]
+name = "websocket-service"
+version = "0.1.0"
+description = "WebSocket Service for Phase V Event-Driven Architecture"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.125.0",
+    "uvicorn>=0.38.0",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.12.0",
+    "python-dotenv>=1.2.1",
+    "websockets>=15.0.1",
+    "sqlmodel>=0.0.27",
+    "psycopg2-binary>=2.9.11",
+    "dapr>=1.14.0",
+    "dapr-ext-grpc>=1.14.0",
+    "pyjwt>=2.10.1",
+    "cryptography>=46.0.3",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.25.5",
+    "jsonschema>=4.25.1",
+]
+
+[dependency-groups]
+dev = [
+    "black>=25.11.0",
+    "mypy>=1.19.0",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.25.5",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.8",
+]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.black]
+line-length = 100
+target-version = ["py313"]
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false

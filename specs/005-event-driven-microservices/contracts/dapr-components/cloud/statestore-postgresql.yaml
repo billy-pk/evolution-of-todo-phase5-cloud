@@ -1,0 +1,28 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: statestore
+  namespace: default
+spec:
+  type: state.postgresql
+  version: v1
+  metadata:
+  - name: connectionString
+    secretKeyRef:
+      name: postgres-credentials
+      key: connectionString
+  - name: tableName
+    value: "dapr_state"
+  - name: metadataTableName
+    value: "dapr_metadata"
+  - name: timeout
+    value: "20"
+auth:
+  secretStore: kubernetes
+---
+# Note: Same PostgreSQL database as local (Neon is cloud-native and serverless)
+# connectionString should point to Neon production database
+# Example: "postgresql://user:password@ep-xyz.us-east-1.aws.neon.tech/dbname?sslmode=require"
+#
+# Create secret: kubectl create secret generic postgres-credentials \
+#   --from-literal=connectionString="<neon-connection-string>"

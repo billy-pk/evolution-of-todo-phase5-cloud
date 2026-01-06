@@ -22,12 +22,14 @@ sys.path.insert(0, str(backend_dir))
 
 from mcp.server import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from models import Task
+from models import Task, RecurrenceRule
 from db import engine
 from sqlmodel import Session, select
 from pydantic import ValidationError
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime, UTC
+from typing import Optional
+from services.recurrence_service import RecurrenceService
 
 
 # Configure transport security for production deployment
@@ -70,13 +72,28 @@ mcp = FastMCP(
 )
 
 
-def add_task(user_id: str, title: str, description: str = None, _session: Session = None) -> dict:
+def add_task(
+    user_id: str,
+    title: str,
+    description: str = None,
+    recurrence_pattern: Optional[str] = None,
+    recurrence_interval: Optional[int] = None,
+    due_date: Optional[str] = None,
+    priority: str = "normal",
+    tags: Optional[list] = None,
+    _session: Session = None
+) -> dict:
     """Create a new task for the user. Returns the created task with its ID.
 
     Args:
         user_id: User ID from JWT token (1-255 characters)
         title: Task title (required, 1-200 characters)
         description: Optional task description (max 1000 characters)
+        recurrence_pattern: Optional recurrence pattern ("daily", "weekly", "monthly")
+        recurrence_interval: Optional recurrence interval (e.g., 2 for bi-weekly)
+        due_date: Optional due date (ISO8601 format)
+        priority: Task priority ("low", "normal", "high", "critical", default: "normal")
+        tags: Optional list of tags
         _session: Optional database session (for testing)
 
     Returns:
@@ -107,14 +124,93 @@ def add_task(user_id: str, title: str, description: str = None, _session: Sessio
             "error": "User ID must be between 1 and 255 characters"
         }
 
+    # Validate priority
+    if priority not in ["low", "normal", "high", "critical"]:
+        return {
+            "status": "error",
+            "error": "Priority must be one of: low, normal, high, critical"
+        }
+
+    # Validate recurrence parameters
+    if recurrence_pattern and not recurrence_interval:
+        return {
+            "status": "error",
+            "error": "recurrence_interval is required when recurrence_pattern is specified"
+        }
+
+    if recurrence_interval and not recurrence_pattern:
+        return {
+            "status": "error",
+            "error": "recurrence_pattern is required when recurrence_interval is specified"
+        }
+
+    # Validate recurrence pattern using RecurrenceService
+    if recurrence_pattern:
+        try:
+            RecurrenceService.validate_recurrence_pattern(recurrence_pattern, recurrence_interval)
+        except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    # Validate tags (max 10 tags, max 50 chars each)
+    if tags:
+        if len(tags) > 10:
+            return {
+                "status": "error",
+                "error": "Maximum 10 tags allowed"
+            }
+        for tag in tags:
+            if len(tag) > 50:
+                return {
+                    "status": "error",
+                    "error": "Each tag must be 50 characters or less"
+                }
+
+    # Normalize tags (case-insensitive)
+    normalized_tags = [tag.lower() for tag in tags] if tags else None
+
+    # Parse due_date if provided
+    parsed_due_date = None
+    if due_date:
+        try:
+            parsed_due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+        except ValueError:
+            return {
+                "status": "error",
+                "error": "Invalid due_date format. Use ISO8601 format (e.g., '2026-01-10T17:00:00Z')"
+            }
+
     try:
         # Use provided session or create new one
         if _session:
+            # Create RecurrenceRule if recurrence specified
+            recurrence_rule_id = None
+            if recurrence_pattern:
+                metadata = RecurrenceService.create_recurrence_metadata(
+                    pattern=recurrence_pattern,
+                    current_date=parsed_due_date or datetime.now(UTC)
+                )
+                recurrence_rule = RecurrenceRule(
+                    id=uuid4(),
+                    pattern=recurrence_pattern,
+                    interval=recurrence_interval,
+                    metadata=metadata
+                )
+                _session.add(recurrence_rule)
+                _session.flush()  # Get ID without committing
+                recurrence_rule_id = recurrence_rule.id
+
             # Create task
             task = Task(
                 user_id=user_id,
                 title=title.strip(),
-                description=description
+                description=description,
+                priority=priority,
+                tags=normalized_tags,
+                due_date=parsed_due_date,
+                recurrence_id=recurrence_rule_id
             )
             _session.add(task)
             _session.commit()
@@ -128,16 +224,43 @@ def add_task(user_id: str, title: str, description: str = None, _session: Sessio
                     "title": task.title,
                     "description": task.description,
                     "completed": task.completed,
+                    "priority": task.priority,
+                    "tags": task.tags,
+                    "due_date": task.due_date.isoformat() if task.due_date else None,
+                    "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
+                    "recurrence_pattern": recurrence_pattern,
+                    "recurrence_interval": recurrence_interval,
                     "created_at": task.created_at.isoformat()
                 }
             }
         else:
             with Session(engine) as session:
+                # Create RecurrenceRule if recurrence specified
+                recurrence_rule_id = None
+                if recurrence_pattern:
+                    metadata = RecurrenceService.create_recurrence_metadata(
+                        pattern=recurrence_pattern,
+                        current_date=parsed_due_date or datetime.now(UTC)
+                    )
+                    recurrence_rule = RecurrenceRule(
+                        id=uuid4(),
+                        pattern=recurrence_pattern,
+                        interval=recurrence_interval,
+                        metadata=metadata
+                    )
+                    session.add(recurrence_rule)
+                    session.flush()  # Get ID without committing
+                    recurrence_rule_id = recurrence_rule.id
+
                 # Create task
                 task = Task(
                     user_id=user_id,
                     title=title.strip(),
-                    description=description
+                    description=description,
+                    priority=priority,
+                    tags=normalized_tags,
+                    due_date=parsed_due_date,
+                    recurrence_id=recurrence_rule_id
                 )
                 session.add(task)
                 session.commit()
@@ -151,6 +274,12 @@ def add_task(user_id: str, title: str, description: str = None, _session: Sessio
                         "title": task.title,
                         "description": task.description,
                         "completed": task.completed,
+                        "priority": task.priority,
+                        "tags": task.tags,
+                        "due_date": task.due_date.isoformat() if task.due_date else None,
+                        "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
+                        "recurrence_pattern": recurrence_pattern,
+                        "recurrence_interval": recurrence_interval,
                         "created_at": task.created_at.isoformat()
                     }
                 }
@@ -264,18 +393,53 @@ def list_tasks(user_id: str, status: str = "all", _session: Session = None) -> d
 
 # Register the tools with MCP
 @mcp.tool()
-def add_task_tool(user_id: str, title: str, description: str = None) -> dict:
-    """MCP tool wrapper for add_task. Create a new task for the user.
+def add_task_tool(
+    user_id: str,
+    title: str,
+    description: str = None,
+    recurrence_pattern: Optional[str] = None,
+    recurrence_interval: Optional[int] = None,
+    due_date: Optional[str] = None,
+    priority: str = "normal",
+    tags: Optional[list] = None
+) -> dict:
+    """MCP tool wrapper for add_task. Create a new task for the user with optional recurrence.
 
     Args:
         user_id: User ID from JWT token (1-255 characters)
         title: Task title (required, 1-200 characters)
         description: Optional task description (max 1000 characters)
+        recurrence_pattern: Optional recurrence pattern ("daily", "weekly", "monthly")
+        recurrence_interval: Optional recurrence interval (e.g., 1 for daily, 2 for bi-weekly)
+        due_date: Optional due date in ISO8601 format (e.g., "2026-01-10T17:00:00Z")
+        priority: Task priority ("low", "normal", "high", "critical", default: "normal")
+        tags: Optional list of tags for categorization
 
     Returns:
-        Dict with status and task data
+        Dict with status and task data including recurrence details if applicable
+
+    Example:
+        # Create a recurring daily task
+        add_task_tool(
+            user_id="user-123",
+            title="Daily standup",
+            recurrence_pattern="daily",
+            recurrence_interval=1,
+            due_date="2026-01-07T09:00:00Z",
+            priority="high",
+            tags=["work", "meetings"]
+        )
     """
-    return add_task(user_id, title, description)
+    return add_task(
+        user_id=user_id,
+        title=title,
+        description=description,
+        recurrence_pattern=recurrence_pattern,
+        recurrence_interval=recurrence_interval,
+        due_date=due_date,
+        priority=priority,
+        tags=tags
+    )
 
 
 @mcp.tool()
@@ -396,14 +560,30 @@ def complete_task(user_id: str, task_id: str, _session: Session = None) -> dict:
         }
 
 
-def update_task(user_id: str, task_id: str, title: str = None, description: str = None, _session: Session = None) -> dict:
-    """Update a task's title and/or description.
+def update_task(
+    user_id: str,
+    task_id: str,
+    title: str = None,
+    description: str = None,
+    recurrence_pattern: Optional[str] = None,
+    recurrence_interval: Optional[int] = None,
+    due_date: Optional[str] = None,
+    priority: Optional[str] = None,
+    tags: Optional[list] = None,
+    _session: Session = None
+) -> dict:
+    """Update a task's fields including recurrence rules.
 
     Args:
         user_id: User ID from JWT token (1-255 characters)
         task_id: Task ID (UUID string)
         title: New task title (optional, 1-200 characters)
         description: New task description (optional, max 1000 characters)
+        recurrence_pattern: Update recurrence pattern ("daily", "weekly", "monthly", or None to remove)
+        recurrence_interval: Update recurrence interval (required if recurrence_pattern specified)
+        due_date: Update due date (ISO8601 format)
+        priority: Update priority ("low", "normal", "high", "critical")
+        tags: Update tags (list of strings, replaces existing tags)
         _session: Optional database session (for testing)
 
     Returns:
@@ -416,10 +596,12 @@ def update_task(user_id: str, task_id: str, title: str = None, description: str 
             "error": "User ID must be between 1 and 255 characters"
         }
 
-    if not title and description is None:
+    # Must provide at least one field to update
+    if not any([title, description is not None, recurrence_pattern is not None,
+                recurrence_interval is not None, due_date, priority, tags is not None]):
         return {
             "status": "error",
-            "error": "Must provide at least title or description to update"
+            "error": "Must provide at least one field to update"
         }
 
     if title and len(title) > 200:
@@ -433,6 +615,64 @@ def update_task(user_id: str, task_id: str, title: str = None, description: str 
             "status": "error",
             "error": "Description must be 1000 characters or less"
         }
+
+    # Validate priority
+    if priority and priority not in ["low", "normal", "high", "critical"]:
+        return {
+            "status": "error",
+            "error": "Priority must be one of: low, normal, high, critical"
+        }
+
+    # Validate recurrence parameters
+    if recurrence_pattern and not recurrence_interval:
+        return {
+            "status": "error",
+            "error": "recurrence_interval is required when recurrence_pattern is specified"
+        }
+
+    if recurrence_interval and not recurrence_pattern:
+        return {
+            "status": "error",
+            "error": "recurrence_pattern is required when recurrence_interval is specified"
+        }
+
+    # Validate recurrence pattern using RecurrenceService
+    if recurrence_pattern:
+        try:
+            RecurrenceService.validate_recurrence_pattern(recurrence_pattern, recurrence_interval)
+        except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    # Validate tags (max 10 tags, max 50 chars each)
+    if tags is not None:
+        if len(tags) > 10:
+            return {
+                "status": "error",
+                "error": "Maximum 10 tags allowed"
+            }
+        for tag in tags:
+            if len(tag) > 50:
+                return {
+                    "status": "error",
+                    "error": "Each tag must be 50 characters or less"
+                }
+
+    # Normalize tags (case-insensitive)
+    normalized_tags = [tag.lower() for tag in tags] if tags is not None else None
+
+    # Parse due_date if provided
+    parsed_due_date = None
+    if due_date:
+        try:
+            parsed_due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+        except ValueError:
+            return {
+                "status": "error",
+                "error": "Invalid due_date format. Use ISO8601 format (e.g., '2026-01-10T17:00:00Z')"
+            }
 
     try:
         task_uuid = UUID(task_id)
@@ -462,16 +702,65 @@ def update_task(user_id: str, task_id: str, title: str = None, description: str 
                     "error": "Unauthorized: Task does not belong to user"
                 }
 
-            # Update fields
+            # Handle recurrence rule updates
+            if recurrence_pattern is not None or recurrence_interval is not None:
+                if recurrence_pattern and recurrence_interval:
+                    # Update or create RecurrenceRule
+                    if task.recurrence_id:
+                        # Update existing RecurrenceRule
+                        statement = select(RecurrenceRule).where(RecurrenceRule.id == task.recurrence_id)
+                        recurrence_rule = _session.exec(statement).first()
+                        if recurrence_rule:
+                            recurrence_rule.pattern = recurrence_pattern
+                            recurrence_rule.interval = recurrence_interval
+                            recurrence_rule.metadata = RecurrenceService.create_recurrence_metadata(
+                                pattern=recurrence_pattern,
+                                current_date=parsed_due_date or task.due_date or datetime.now(UTC)
+                            )
+                            _session.add(recurrence_rule)
+                    else:
+                        # Create new RecurrenceRule
+                        metadata = RecurrenceService.create_recurrence_metadata(
+                            pattern=recurrence_pattern,
+                            current_date=parsed_due_date or task.due_date or datetime.now(UTC)
+                        )
+                        recurrence_rule = RecurrenceRule(
+                            id=uuid4(),
+                            pattern=recurrence_pattern,
+                            interval=recurrence_interval,
+                            metadata=metadata
+                        )
+                        _session.add(recurrence_rule)
+                        _session.flush()
+                        task.recurrence_id = recurrence_rule.id
+
+            # Update task fields
             if title:
                 task.title = title.strip()
             if description is not None:
                 task.description = description
+            if priority:
+                task.priority = priority
+            if normalized_tags is not None:
+                task.tags = normalized_tags
+            if parsed_due_date:
+                task.due_date = parsed_due_date
             task.updated_at = datetime.now(UTC)
 
             _session.add(task)
             _session.commit()
             _session.refresh(task)
+
+            # Get recurrence details for response
+            recurrence_info = {}
+            if task.recurrence_id:
+                statement = select(RecurrenceRule).where(RecurrenceRule.id == task.recurrence_id)
+                recurrence_rule = _session.exec(statement).first()
+                if recurrence_rule:
+                    recurrence_info = {
+                        "recurrence_pattern": recurrence_rule.pattern,
+                        "recurrence_interval": recurrence_rule.interval
+                    }
 
             return {
                 "status": "success",
@@ -480,6 +769,11 @@ def update_task(user_id: str, task_id: str, title: str = None, description: str 
                     "title": task.title,
                     "description": task.description,
                     "completed": task.completed,
+                    "priority": task.priority,
+                    "tags": task.tags,
+                    "due_date": task.due_date.isoformat() if task.due_date else None,
+                    "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
+                    **recurrence_info,
                     "updated_at": task.updated_at.isoformat()
                 }
             }
@@ -502,16 +796,65 @@ def update_task(user_id: str, task_id: str, title: str = None, description: str 
                         "error": "Unauthorized: Task does not belong to user"
                     }
 
-                # Update fields
+                # Handle recurrence rule updates
+                if recurrence_pattern is not None or recurrence_interval is not None:
+                    if recurrence_pattern and recurrence_interval:
+                        # Update or create RecurrenceRule
+                        if task.recurrence_id:
+                            # Update existing RecurrenceRule
+                            statement = select(RecurrenceRule).where(RecurrenceRule.id == task.recurrence_id)
+                            recurrence_rule = session.exec(statement).first()
+                            if recurrence_rule:
+                                recurrence_rule.pattern = recurrence_pattern
+                                recurrence_rule.interval = recurrence_interval
+                                recurrence_rule.metadata = RecurrenceService.create_recurrence_metadata(
+                                    pattern=recurrence_pattern,
+                                    current_date=parsed_due_date or task.due_date or datetime.now(UTC)
+                                )
+                                session.add(recurrence_rule)
+                        else:
+                            # Create new RecurrenceRule
+                            metadata = RecurrenceService.create_recurrence_metadata(
+                                pattern=recurrence_pattern,
+                                current_date=parsed_due_date or task.due_date or datetime.now(UTC)
+                            )
+                            recurrence_rule = RecurrenceRule(
+                                id=uuid4(),
+                                pattern=recurrence_pattern,
+                                interval=recurrence_interval,
+                                metadata=metadata
+                            )
+                            session.add(recurrence_rule)
+                            session.flush()
+                            task.recurrence_id = recurrence_rule.id
+
+                # Update task fields
                 if title:
                     task.title = title.strip()
                 if description is not None:
                     task.description = description
+                if priority:
+                    task.priority = priority
+                if normalized_tags is not None:
+                    task.tags = normalized_tags
+                if parsed_due_date:
+                    task.due_date = parsed_due_date
                 task.updated_at = datetime.now(UTC)
 
                 session.add(task)
                 session.commit()
                 session.refresh(task)
+
+                # Get recurrence details for response
+                recurrence_info = {}
+                if task.recurrence_id:
+                    statement = select(RecurrenceRule).where(RecurrenceRule.id == task.recurrence_id)
+                    recurrence_rule = session.exec(statement).first()
+                    if recurrence_rule:
+                        recurrence_info = {
+                            "recurrence_pattern": recurrence_rule.pattern,
+                            "recurrence_interval": recurrence_rule.interval
+                        }
 
                 return {
                     "status": "success",
@@ -520,6 +863,11 @@ def update_task(user_id: str, task_id: str, title: str = None, description: str 
                         "title": task.title,
                         "description": task.description,
                         "completed": task.completed,
+                        "priority": task.priority,
+                        "tags": task.tags,
+                        "due_date": task.due_date.isoformat() if task.due_date else None,
+                        "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
+                        **recurrence_info,
                         "updated_at": task.updated_at.isoformat()
                     }
                 }
@@ -639,19 +987,54 @@ def complete_task_tool(user_id: str, task_id: str) -> dict:
 
 
 @mcp.tool()
-def update_task_tool(user_id: str, task_id: str, title: str = None, description: str = None) -> dict:
-    """MCP tool wrapper for update_task. Update a task's title and/or description.
+def update_task_tool(
+    user_id: str,
+    task_id: str,
+    title: str = None,
+    description: str = None,
+    recurrence_pattern: Optional[str] = None,
+    recurrence_interval: Optional[int] = None,
+    due_date: Optional[str] = None,
+    priority: Optional[str] = None,
+    tags: Optional[list] = None
+) -> dict:
+    """MCP tool wrapper for update_task. Update task fields including recurrence.
 
     Args:
         user_id: User ID from JWT token (1-255 characters)
         task_id: Task ID (UUID string)
         title: New task title (optional, 1-200 characters)
         description: New task description (optional, max 1000 characters)
+        recurrence_pattern: Update recurrence pattern ("daily", "weekly", "monthly")
+        recurrence_interval: Update recurrence interval (e.g., 2 for bi-weekly)
+        due_date: Update due date in ISO8601 format (e.g., "2026-01-10T17:00:00Z")
+        priority: Update priority ("low", "normal", "high", "critical")
+        tags: Update tags (list of strings, replaces existing tags)
 
     Returns:
         Dict with status and updated task data
+
+    Example:
+        # Update a task to be recurring
+        update_task_tool(
+            user_id="user-123",
+            task_id="uuid-here",
+            recurrence_pattern="weekly",
+            recurrence_interval=2,
+            priority="high"
+        )
     """
-    return update_task(user_id, task_id, title, description)
+    return update_task(
+        user_id=user_id,
+        task_id=task_id,
+        title=title,
+        description=description,
+        recurrence_pattern=recurrence_pattern,
+        recurrence_interval=recurrence_interval,
+        due_date=due_date,
+        priority=priority,
+        tags=tags
+    )
 
 
 @mcp.tool()

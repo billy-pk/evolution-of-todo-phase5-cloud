@@ -1,0 +1,44 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub
+  namespace: default
+spec:
+  type: pubsub.kafka  # Redpanda Cloud is Kafka-compatible
+  version: v1
+  metadata:
+  - name: brokers
+    value: "<REDPANDA_CLOUD_BROKER_URL>:9092"  # Replace with actual Redpanda Cloud endpoint
+    # Example: "abc123.redpanda.cloud:9092"
+  - name: authType
+    value: "sasl"
+  - name: saslUsername
+    secretKeyRef:
+      name: redpanda-credentials
+      key: username
+  - name: saslPassword
+    secretKeyRef:
+      name: redpanda-credentials
+      key: password
+  - name: saslMechanism
+    value: "SCRAM-SHA-256"
+  - name: tls
+    value: "true"  # Required for Redpanda Cloud
+  - name: consumerGroup
+    value: "todo-app"  # Same consumer group as local
+  - name: clientId
+    value: "todo-app-client"
+  - name: initialOffset
+    value: "oldest"
+  - name: maxMessageBytes
+    value: "1048576"  # 1MB max message size
+auth:
+  secretStore: kubernetes
+---
+# Note: Redpanda Cloud requires SASL/SCRAM-SHA-256 authentication and TLS
+# Create secret: kubectl create secret generic redpanda-credentials \
+#   --from-literal=username="<username>" \
+#   --from-literal=password="<password>"
+#
+# Broker URL format: <cluster-id>.redpanda.cloud:9092
+# Get credentials from Redpanda Cloud console

@@ -1,0 +1,27 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: jobs
+  namespace: default
+spec:
+  type: jobs.postgresql
+  version: v1
+  metadata:
+  - name: connectionString
+    secretKeyRef:
+      name: postgres-credentials
+      key: connectionString
+  - name: tableName
+    value: "dapr_jobs"  # Table for scheduled jobs
+  - name: metadataTableName
+    value: "dapr_jobs_metadata"
+  - name: timeout
+    value: "20"
+  - name: cleanupIntervalInSeconds
+    value: "3600"  # Clean up completed jobs every hour
+auth:
+  secretStore: kubernetes
+---
+# Note: Dapr Jobs API uses PostgreSQL for persistent job storage
+# Jobs survive pod restarts and are executed exactly once
+# Used for reminder scheduling with dynamic due dates
