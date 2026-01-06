@@ -27,9 +27,9 @@ This project uses a monorepo structure:
 
 **Purpose**: Project initialization and infrastructure setup for event-driven microservices architecture
 
-- [ ] T001 Create services/ directory structure for microservices (notification-service, recurring-task-service, audit-service, websocket-service)
-- [ ] T002 Create infrastructure/ directory structure (helm/, dapr-components/, scripts/)
-- [ ] T003 [P] Create Alembic migrations directory in backend/migrations/
+- [X] T001 Create services/ directory structure for microservices (notification-service, recurring-task-service, audit-service, websocket-service)
+- [X] T002 Create infrastructure/ directory structure (helm/, dapr-components/, scripts/)
+- [X] T003 [P] Create Alembic migrations directory in backend/migrations/
 - [ ] T004 [P] Initialize Python virtual environments for all microservices (services/*/requirements.txt with Dapr SDK, FastAPI, SQLModel)
 - [ ] T005 [P] Create Dockerfiles for all 6 services (backend, frontend, notification-service, recurring-task-service, audit-service, websocket-service)
 - [ ] T006 [P] Configure linting and formatting for microservices (ruff, black, mypy)
