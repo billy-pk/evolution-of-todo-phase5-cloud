@@ -1,0 +1,200 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://evolution-of-todo.example.com/schemas/task-updates.schema.json",
+  "title": "TaskUpdate",
+  "description": "Event schema for real-time UI updates via WebSocket (published after task state changes)",
+  "type": "object",
+  "required": [
+    "update_type",
+    "event_id",
+    "task_id",
+    "user_id",
+    "timestamp",
+    "schema_version"
+  ],
+  "properties": {
+    "update_type": {
+      "type": "string",
+      "enum": [
+        "task_created",
+        "task_updated",
+        "task_completed",
+        "task_deleted",
+        "task_recurring_generated"
+      ],
+      "description": "Type of UI update (maps to frontend action)"
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this event (for idempotency)"
+    },
+    "task_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "ID of the task that changed"
+    },
+    "user_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "ID of the user who owns this task (for user isolation in WebSocket broadcast)"
+    },
+    "task_data": {
+      "type": "object",
+      "description": "Full task object to update in UI (or null for delete)",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Task ID (same as task_id at root level)"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Task title"
+        },
+        "description": {
+          "type": ["string", "null"],
+          "maxLength": 5000,
+          "description": "Task description"
+        },
+        "completed": {
+          "type": "boolean",
+          "description": "Whether task is completed"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "normal", "high", "critical"],
+          "description": "Task priority level"
+        },
+        "tags": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of tag strings"
+        },
+        "due_date": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Task due date in ISO8601 format"
+        },
+        "recurrence_id": {
+          "type": ["string", "null"],
+          "format": "uuid",
+          "description": "ID of recurrence rule if task is recurring"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When task was created"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When task was last updated"
+        }
+      }
+    },
+    "source": {
+      "type": "string",
+      "enum": ["user_action", "system_generated", "recurring_task_service"],
+      "description": "What triggered this update (helps UI decide whether to show notification)"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the event occurred (ISO8601 with timezone)"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of this schema (e.g., 1.0.0)",
+      "default": "1.0.0"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "update_type": "task_created",
+      "event_id": "890e1234-l56i-89k0-h123-193381841777",
+      "task_id": "550e8400-e29b-41d4-a716-446655440000",
+      "user_id": "user-123",
+      "task_data": {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "title": "Submit quarterly report",
+        "description": "Q4 2025 financial report",
+        "completed": false,
+        "priority": "high",
+        "tags": ["work", "urgent"],
+        "due_date": "2026-01-13T17:00:00Z",
+        "recurrence_id": null,
+        "created_at": "2026-01-06T10:00:00Z",
+        "updated_at": "2026-01-06T10:00:00Z"
+      },
+      "source": "user_action",
+      "timestamp": "2026-01-06T10:00:01Z",
+      "schema_version": "1.0.0"
+    },
+    {
+      "update_type": "task_completed",
+      "event_id": "901e2345-m67j-90l1-i234-204492952888",
+      "task_id": "550e8400-e29b-41d4-a716-446655440000",
+      "user_id": "user-123",
+      "task_data": {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "title": "Submit quarterly report",
+        "description": "Q4 2025 financial report",
+        "completed": true,
+        "priority": "high",
+        "tags": ["work", "urgent"],
+        "due_date": "2026-01-13T17:00:00Z",
+        "recurrence_id": null,
+        "created_at": "2026-01-06T10:00:00Z",
+        "updated_at": "2026-01-13T16:45:00Z"
+      },
+      "source": "user_action",
+      "timestamp": "2026-01-13T16:45:01Z",
+      "schema_version": "1.0.0"
+    },
+    {
+      "update_type": "task_recurring_generated",
+      "event_id": "012e3456-n78k-01m2-j345-315503063999",
+      "task_id": "661f9511-f30c-52e5-b827-557766551111",
+      "user_id": "user-123",
+      "task_data": {
+        "id": "661f9511-f30c-52e5-b827-557766551111",
+        "title": "Weekly team meeting",
+        "description": "Discuss project progress",
+        "completed": false,
+        "priority": "normal",
+        "tags": ["work", "meetings"],
+        "due_date": "2026-01-20T10:00:00Z",
+        "recurrence_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "created_at": "2026-01-13T11:30:00Z",
+        "updated_at": "2026-01-13T11:30:00Z"
+      },
+      "source": "recurring_task_service",
+      "timestamp": "2026-01-13T11:30:02Z",
+      "schema_version": "1.0.0"
+    },
+    {
+      "update_type": "task_deleted",
+      "event_id": "123e4567-o89l-12n3-k456-426614174000",
+      "task_id": "550e8400-e29b-41d4-a716-446655440000",
+      "user_id": "user-123",
+      "task_data": null,
+      "source": "user_action",
+      "timestamp": "2026-01-13T18:00:00Z",
+      "schema_version": "1.0.0"
+    }
+  ],
+  "definitions": {
+    "update_source": {
+      "description": "What triggered the task update",
+      "enum": ["user_action", "system_generated", "recurring_task_service"]
+    }
+  }
+}

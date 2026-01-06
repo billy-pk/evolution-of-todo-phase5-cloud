@@ -1,0 +1,202 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://evolution-of-todo.example.com/schemas/reminders.schema.json",
+  "title": "ReminderEvent",
+  "description": "Event schema for reminder lifecycle events (scheduled, triggered, delivered, failed)",
+  "type": "object",
+  "required": [
+    "event_type",
+    "event_id",
+    "reminder_id",
+    "task_id",
+    "user_id",
+    "reminder_time",
+    "timestamp",
+    "schema_version"
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "reminder.scheduled",
+        "reminder.triggered",
+        "reminder.delivered",
+        "reminder.failed"
+      ],
+      "description": "Type of reminder lifecycle event"
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this event (for idempotency and deduplication)"
+    },
+    "reminder_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "ID of the reminder"
+    },
+    "task_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "ID of the task this reminder is for"
+    },
+    "user_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "ID of the user who owns this task (for user isolation)"
+    },
+    "reminder_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the reminder is scheduled to trigger (ISO8601 with timezone)"
+    },
+    "task_data": {
+      "type": "object",
+      "description": "Relevant task information for the reminder (for notification content)",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Task title"
+        },
+        "description": {
+          "type": ["string", "null"],
+          "maxLength": 5000,
+          "description": "Task description (optional)"
+        },
+        "due_date": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Task due date in ISO8601 format"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "normal", "high", "critical"],
+          "description": "Task priority level"
+        }
+      }
+    },
+    "delivery_method": {
+      "type": "string",
+      "enum": ["webhook", "email", "sms"],
+      "default": "webhook",
+      "description": "How the reminder should be delivered"
+    },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3,
+      "default": 0,
+      "description": "Number of delivery attempts (0 = first attempt, max 3 retries)"
+    },
+    "error_message": {
+      "type": ["string", "null"],
+      "maxLength": 1000,
+      "description": "Error message if delivery failed (only for reminder.failed events)"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the event occurred (ISO8601 with timezone)"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of this schema (e.g., 1.0.0)",
+      "default": "1.0.0"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "event_type": "reminder.scheduled",
+      "event_id": "456e7890-h12e-45g6-d789-759947407333",
+      "reminder_id": "661f9511-f30c-52e5-b827-557766551111",
+      "task_id": "550e8400-e29b-41d4-a716-446655440000",
+      "user_id": "user-123",
+      "reminder_time": "2026-01-13T09:00:00Z",
+      "task_data": {
+        "title": "Submit quarterly report",
+        "description": "Q4 2025 financial report",
+        "due_date": "2026-01-13T17:00:00Z",
+        "priority": "high"
+      },
+      "delivery_method": "webhook",
+      "retry_count": 0,
+      "timestamp": "2026-01-06T10:00:00Z",
+      "schema_version": "1.0.0"
+    },
+    {
+      "event_type": "reminder.triggered",
+      "event_id": "567e8901-i23f-56h7-e890-860058518444",
+      "reminder_id": "661f9511-f30c-52e5-b827-557766551111",
+      "task_id": "550e8400-e29b-41d4-a716-446655440000",
+      "user_id": "user-123",
+      "reminder_time": "2026-01-13T09:00:00Z",
+      "task_data": {
+        "title": "Submit quarterly report",
+        "description": "Q4 2025 financial report",
+        "due_date": "2026-01-13T17:00:00Z",
+        "priority": "high"
+      },
+      "delivery_method": "webhook",
+      "retry_count": 0,
+      "timestamp": "2026-01-13T09:00:03Z",
+      "schema_version": "1.0.0"
+    },
+    {
+      "event_type": "reminder.delivered",
+      "event_id": "678e9012-j34g-67i8-f901-971169629555",
+      "reminder_id": "661f9511-f30c-52e5-b827-557766551111",
+      "task_id": "550e8400-e29b-41d4-a716-446655440000",
+      "user_id": "user-123",
+      "reminder_time": "2026-01-13T09:00:00Z",
+      "task_data": {
+        "title": "Submit quarterly report",
+        "description": "Q4 2025 financial report",
+        "due_date": "2026-01-13T17:00:00Z",
+        "priority": "high"
+      },
+      "delivery_method": "webhook",
+      "retry_count": 0,
+      "timestamp": "2026-01-13T09:00:05Z",
+      "schema_version": "1.0.0"
+    },
+    {
+      "event_type": "reminder.failed",
+      "event_id": "789e0123-k45h-78j9-g012-082270730666",
+      "reminder_id": "661f9511-f30c-52e5-b827-557766551111",
+      "task_id": "550e8400-e29b-41d4-a716-446655440000",
+      "user_id": "user-123",
+      "reminder_time": "2026-01-13T09:00:00Z",
+      "task_data": {
+        "title": "Submit quarterly report",
+        "description": "Q4 2025 financial report",
+        "due_date": "2026-01-13T17:00:00Z",
+        "priority": "high"
+      },
+      "delivery_method": "webhook",
+      "retry_count": 3,
+      "error_message": "Webhook endpoint returned 503 Service Unavailable after 3 retries",
+      "timestamp": "2026-01-13T09:02:45Z",
+      "schema_version": "1.0.0"
+    }
+  ],
+  "definitions": {
+    "reminder_lifecycle": {
+      "description": "Reminder event types representing the lifecycle",
+      "enum": [
+        "reminder.scheduled",
+        "reminder.triggered",
+        "reminder.delivered",
+        "reminder.failed"
+      ]
+    },
+    "delivery_method": {
+      "description": "Supported delivery methods for reminders",
+      "enum": ["webhook", "email", "sms"]
+    }
+  }
+}

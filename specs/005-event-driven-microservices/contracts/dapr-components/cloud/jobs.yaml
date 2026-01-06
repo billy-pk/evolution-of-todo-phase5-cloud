@@ -1,0 +1,26 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: jobs
+  namespace: default
+spec:
+  type: jobs.postgresql
+  version: v1
+  metadata:
+  - name: connectionString
+    secretKeyRef:
+      name: postgres-credentials
+      key: connectionString
+  - name: tableName
+    value: "dapr_jobs"
+  - name: metadataTableName
+    value: "dapr_jobs_metadata"
+  - name: timeout
+    value: "20"
+  - name: cleanupIntervalInSeconds
+    value: "3600"
+auth:
+  secretStore: kubernetes
+---
+# Note: Same configuration as local, but using cloud PostgreSQL connection
+# Dapr Jobs API ensures scheduled reminders survive pod restarts in OKE
