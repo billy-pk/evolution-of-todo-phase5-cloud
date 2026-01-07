@@ -286,10 +286,10 @@ This project uses a monorepo structure:
 
 ### Deployment Scripts
 
-- [ ] T120 Create deploy-local.sh script in infrastructure/scripts/deploy-local.sh (deploy to Minikube with Redpanda Docker)
-- [ ] T121 Create deploy-cloud.sh script in infrastructure/scripts/deploy-cloud.sh (deploy to OKE with Redpanda Cloud)
-- [ ] T122 Create setup-redpanda-docker.sh script in infrastructure/scripts/setup-redpanda-docker.sh (start local Redpanda container)
-- [ ] T123 Create teardown.sh script in infrastructure/scripts/teardown.sh (cleanup all resources)
+- [X] T120 Create deploy-local.sh script in infrastructure/scripts/deploy-local.sh (deploy to Minikube with Redpanda Docker)
+- [X] T121 Create deploy-cloud.sh script in infrastructure/scripts/deploy-cloud.sh (deploy to OKE with Redpanda Cloud)
+- [X] T122 Create setup-redpanda-docker.sh script in infrastructure/scripts/setup-redpanda-docker.sh (start local Redpanda container)
+- [X] T123 Create teardown.sh script in infrastructure/scripts/teardown.sh (cleanup all resources)
 
 ---
 
