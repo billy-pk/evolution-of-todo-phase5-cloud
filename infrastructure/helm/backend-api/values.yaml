@@ -1,0 +1,125 @@
+# Default values for backend-api Helm chart
+# This file contains default configuration values that can be overridden
+# by values-local.yaml (Minikube) or values-cloud.yaml (OKE)
+
+replicaCount: 1
+
+image:
+  repository: backend-api
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Service configuration
+service:
+  type: NodePort
+  port: 8000
+  targetPort: 8000
+  nodePort: 30081  # Fixed NodePort for local development
+
+# Dapr sidecar configuration
+dapr:
+  enabled: true
+  appId: backend-api
+  appPort: 8000
+  appProtocol: http
+  enableMetrics: true
+  metricsPort: 9090
+  logLevel: info
+  # Dapr components directory (local or cloud)
+  componentsPath: /dapr-components
+
+# Environment variables
+env:
+  # Database connection (override in values-local.yaml or values-cloud.yaml)
+  DATABASE_URL: ""
+
+  # Better Auth configuration
+  BETTER_AUTH_SECRET: ""
+  BETTER_AUTH_ISSUER: "http://localhost:3000"
+  BETTER_AUTH_JWKS_URL: "http://localhost:3000/api/auth/jwks"
+
+  # OpenAI API key
+  OPENAI_API_KEY: ""
+
+  # MCP Server URL
+  MCP_SERVER_URL: "http://localhost:8001"
+
+  # Dapr configuration
+  DAPR_HTTP_PORT: "3500"
+  DAPR_GRPC_PORT: "50001"
+
+  # Application configuration
+  LOG_LEVEL: "info"
+  CORS_ORIGINS: "http://localhost:3000"
+
+# ConfigMap for application configuration
+configMap:
+  enabled: true
+  data:
+    APP_NAME: "evolution-of-todo-backend"
+    ENVIRONMENT: "local"
+    DAPR_PUBSUB_NAME: "pubsub"
+    DAPR_STATESTORE_NAME: "statestore"
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# Liveness and readiness probes
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Autoscaling configuration (disabled by default)
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+# Node selector, tolerations, and affinity
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+
+# Pod annotations (Dapr sidecar injection)
+podAnnotations:
+  dapr.io/enabled: "true"
+  dapr.io/app-id: "backend-api"
+  dapr.io/app-port: "8000"
+  dapr.io/app-protocol: "http"
+  dapr.io/enable-metrics: "true"
+  dapr.io/metrics-port: "9090"
+  dapr.io/log-level: "info"

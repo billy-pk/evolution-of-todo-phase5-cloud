@@ -1,0 +1,127 @@
+# values-cloud.yaml
+# Overrides for Oracle Kubernetes Engine (OKE) cloud deployment
+# Usage: helm install backend-api ./backend-api -f values-cloud.yaml
+
+# Replica count for high availability in production
+replicaCount: 2
+
+# Image configuration for cloud deployment
+image:
+  repository: <region>.ocir.io/<tenancy>/backend-api  # Oracle Container Registry
+  pullPolicy: Always  # Always pull latest image from registry
+  tag: "v1.0.0"  # Use semantic versioning for production
+
+# Image pull secrets for Oracle Container Registry (OCIR)
+imagePullSecrets:
+  - name: ocir-secret
+
+# Service configuration for cloud deployment
+service:
+  type: ClusterIP  # Use ClusterIP for internal access (behind ingress)
+  port: 8000
+  targetPort: 8000
+  # No nodePort for cloud (use Ingress instead)
+
+# Dapr configuration for cloud deployment
+dapr:
+  enabled: true
+  appId: backend-api
+  appPort: 8000
+  appProtocol: http
+  enableMetrics: true
+  metricsPort: 9090
+  logLevel: info  # Production logging level
+  componentsPath: /dapr-components/cloud  # Cloud Dapr components (Redpanda Cloud with SASL/SSL)
+
+# Environment variables for cloud deployment
+env:
+  # Database connection (Neon PostgreSQL - production)
+  # IMPORTANT: Set this value using Kubernetes Secret or --set-string during helm install
+  # Example: helm install backend-api ./backend-api -f values-cloud.yaml --set-string env.DATABASE_URL="postgresql://..."
+  DATABASE_URL: ""
+
+  # Better Auth configuration (cloud frontend)
+  BETTER_AUTH_SECRET: ""  # IMPORTANT: Set this via Kubernetes Secret
+  BETTER_AUTH_ISSUER: "https://app.evolution-of-todo.example.com"  # Production frontend URL
+  BETTER_AUTH_JWKS_URL: "https://app.evolution-of-todo.example.com/api/auth/jwks"
+
+  # OpenAI API key
+  # IMPORTANT: Set this value using Kubernetes Secret
+  OPENAI_API_KEY: ""
+
+  # MCP Server URL (cloud deployment, internal service)
+  MCP_SERVER_URL: "http://mcp-server:8001"
+
+  # Dapr ports (default Dapr sidecar ports)
+  DAPR_HTTP_PORT: "3500"
+  DAPR_GRPC_PORT: "50001"
+
+  # Application configuration
+  LOG_LEVEL: "info"  # Production logging level
+  CORS_ORIGINS: "https://app.evolution-of-todo.example.com"  # Production frontend URL
+
+# ConfigMap for cloud environment
+configMap:
+  enabled: true
+  data:
+    APP_NAME: "evolution-of-todo-backend"
+    ENVIRONMENT: "production"
+    DAPR_PUBSUB_NAME: "pubsub"
+    DAPR_STATESTORE_NAME: "statestore"
+
+# Resource limits for cloud deployment (production workload)
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m  # Higher request for production performance
+    memory: 512Mi
+
+# Autoscaling enabled for cloud deployment
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# Pod annotations for Dapr sidecar injection (cloud configuration)
+podAnnotations:
+  dapr.io/enabled: "true"
+  dapr.io/app-id: "backend-api"
+  dapr.io/app-port: "8000"
+  dapr.io/app-protocol: "http"
+  dapr.io/enable-metrics: "true"
+  dapr.io/metrics-port: "9090"
+  dapr.io/log-level: "info"
+  dapr.io/config: "dapr-config-cloud"  # Cloud Dapr configuration
+
+# Security context (hardened for production)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false  # Set to true if app doesn't need write access
+
+# Node affinity for Oracle Cloud Infrastructure (OCI) nodes
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - VM.Standard.E4.Flex  # Oracle Cloud instance type
+
+# Tolerations for specific node taints (if any)
+tolerations: []
+
+# Pod disruption budget for high availability
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

@@ -1,0 +1,56 @@
+# values-local.yaml
+# Overrides for local Minikube deployment
+# Usage: helm install frontend ./frontend -f values-local.yaml
+
+# Image configuration for local development
+image:
+  repository: frontend
+  pullPolicy: Never  # Use local Docker images (built with `docker build`)
+  tag: "latest"
+
+# Service configuration for local development
+service:
+  type: NodePort
+  port: 3000
+  targetPort: 3000
+  nodePort: 30080  # Fixed NodePort for easy local access (http://localhost:30080)
+
+# Environment variables for local development
+env:
+  # Next.js configuration
+  NODE_ENV: "development"  # Development mode for hot reload and debugging
+  NEXT_PUBLIC_API_URL: "http://localhost:30081"  # Backend API NodePort
+
+  # Better Auth configuration (local)
+  BETTER_AUTH_SECRET: ""  # IMPORTANT: Set via --set-string
+  BETTER_AUTH_URL: "http://localhost:30080"  # Frontend NodePort
+  DATABASE_URL: ""  # IMPORTANT: Set via --set-string (for Better Auth session storage)
+
+# ConfigMap for local environment
+configMap:
+  enabled: true
+  data:
+    APP_NAME: "evolution-of-todo-frontend"
+    ENVIRONMENT: "local"
+
+# Resource limits for local development (reduced for Minikube)
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m  # Lower request for Minikube resource constraints
+    memory: 128Mi
+
+# Autoscaling disabled for local development
+autoscaling:
+  enabled: false
+
+# Security context (relaxed for local development)
+securityContext:
+  runAsNonRoot: false  # Allow root for local debugging
+  runAsUser: 0
+  fsGroup: 0
+
+# Pod annotations (NO Dapr sidecar for frontend)
+podAnnotations: {}

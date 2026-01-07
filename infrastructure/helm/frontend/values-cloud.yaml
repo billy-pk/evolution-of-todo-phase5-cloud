@@ -1,0 +1,90 @@
+# values-cloud.yaml
+# Overrides for Oracle Kubernetes Engine (OKE) cloud deployment
+# Usage: helm install frontend ./frontend -f values-cloud.yaml
+
+# Replica count for high availability in production
+replicaCount: 2
+
+# Image configuration for cloud deployment
+image:
+  repository: <region>.ocir.io/<tenancy>/frontend  # Oracle Container Registry
+  pullPolicy: Always  # Always pull latest image from registry
+  tag: "v1.0.0"  # Use semantic versioning for production
+
+# Image pull secrets for Oracle Container Registry (OCIR)
+imagePullSecrets:
+  - name: ocir-secret
+
+# Service configuration for cloud deployment
+service:
+  type: ClusterIP  # Use ClusterIP for internal access (behind ingress)
+  port: 3000
+  targetPort: 3000
+  # No nodePort for cloud (use Ingress instead)
+
+# Environment variables for cloud deployment
+env:
+  # Next.js configuration
+  NODE_ENV: "production"  # Production mode with optimizations
+  NEXT_PUBLIC_API_URL: "https://api.evolution-of-todo.example.com"  # Backend API URL (via Ingress)
+
+  # Better Auth configuration (cloud)
+  BETTER_AUTH_SECRET: ""  # IMPORTANT: Set via Kubernetes Secret
+  BETTER_AUTH_URL: "https://app.evolution-of-todo.example.com"  # Frontend URL
+  DATABASE_URL: ""  # IMPORTANT: Set via Kubernetes Secret (for Better Auth session storage)
+
+# ConfigMap for cloud environment
+configMap:
+  enabled: true
+  data:
+    APP_NAME: "evolution-of-todo-frontend"
+    ENVIRONMENT: "production"
+
+# Resource limits for cloud deployment (production workload)
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m  # Higher request for production performance
+    memory: 512Mi
+
+# Autoscaling enabled for cloud deployment
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# Security context (hardened for production)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false  # Next.js needs write access for cache
+
+# Pod annotations (NO Dapr sidecar for frontend)
+podAnnotations: {}
+
+# Node affinity for Oracle Cloud Infrastructure (OCI) nodes
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - VM.Standard.E4.Flex  # Oracle Cloud instance type
+
+# Tolerations for specific node taints (if any)
+tolerations: []
+
+# Pod disruption budget for high availability
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

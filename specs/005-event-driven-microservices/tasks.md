@@ -127,24 +127,24 @@ This project uses a monorepo structure:
 
 ### Tests for User Story 2
 
-- [ ] T047 [P] [US2] Integration test for due date validation in backend/tests/integration/test_due_date_validation.py
-- [ ] T048 [P] [US2] Integration test for reminder scheduling in backend/tests/integration/test_reminder_scheduling.py
-- [ ] T049 [P] [US2] Integration test for reminder delivery in backend/tests/integration/test_reminder_delivery.py
+- [X] T047 [P] [US2] Integration test for due date validation in backend/tests/integration/test_due_date_validation.py
+- [X] T048 [P] [US2] Integration test for reminder scheduling in backend/tests/integration/test_reminder_scheduling.py
+- [X] T049 [P] [US2] Integration test for reminder delivery in backend/tests/integration/test_reminder_delivery.py
 
 ### Implementation for User Story 2
 
-- [ ] T050 [P] [US2] Extend MCP tool add_task in backend/tools/server.py to accept due_date parameter (ISO8601)
-- [ ] T051 [P] [US2] Extend MCP tool add_task in backend/tools/server.py to accept reminder_offset parameter (e.g., "1 hour before")
-- [ ] T052 [US2] Create ReminderService in backend/services/reminder_service.py (schedule reminders via Dapr Jobs API)
-- [ ] T053 [US2] Implement due date validation in backend/services/reminder_service.py (reject past dates unless explicitly allowed)
-- [ ] T053b [US2] Integrate dateparser library for natural language date parsing in backend/services/reminder_service.py (e.g., "tomorrow at 5pm" → ISO8601)
-- [ ] T054 [US2] Update task creation logic in backend/tools/server.py to create Reminder and schedule via Dapr Jobs API
-- [ ] T055 [US2] Create Notification Service main file in services/notification-service/notification_service.py
-- [ ] T056 [US2] Implement Dapr Pub/Sub subscription to reminders topic in services/notification-service/notification_service.py
-- [ ] T057 [US2] Implement Dapr Jobs API job handler endpoint in services/notification-service/notification_service.py (/api/jobs/reminder)
-- [ ] T058 [US2] Implement notification delivery logic in services/notification-service/notification_service.py (webhook delivery, update reminder status)
-- [ ] T059 [US2] Implement retry logic with exponential backoff in services/notification-service/notification_service.py (max 3 retries)
-- [ ] T060 [US2] Add idempotency check in services/notification-service/notification_service.py (skip if task completed or deleted)
+- [X] T050 [P] [US2] Extend MCP tool add_task in backend/tools/server.py to accept due_date parameter (ISO8601) - Completed in T037
+- [X] T051 [P] [US2] Extend MCP tool add_task in backend/tools/server.py to accept reminder_offset parameter (e.g., "1 hour before", "30 minutes before", "1 day before")
+- [X] T052 [US2] Create ReminderService in backend/services/reminder_service.py (schedule reminders via Dapr Jobs API)
+- [X] T053 [US2] Implement due date validation in backend/services/reminder_service.py (reject past dates unless explicitly allowed)
+- [X] T053b [US2] Integrate dateparser library for natural language date parsing in backend/services/reminder_service.py (e.g., "tomorrow at 5pm" → ISO8601)
+- [X] T054 [US2] Update task creation logic in backend/tools/server.py to create Reminder and schedule via Dapr Jobs API
+- [X] T055 [US2] Create Notification Service main file in services/notification-service/notification_service.py
+- [X] T056 [US2] Implement Dapr Pub/Sub subscription to reminders topic in services/notification-service/notification_service.py
+- [X] T057 [US2] Implement Dapr Jobs API job handler endpoint in services/notification-service/notification_service.py (/api/jobs/reminder)
+- [X] T058 [US2] Implement notification delivery logic in services/notification-service/notification_service.py (webhook delivery, update reminder status)
+- [X] T059 [US2] Implement retry logic with exponential backoff in services/notification-service/notification_service.py (max 3 retries)
+- [X] T060 [US2] Add idempotency check in services/notification-service/notification_service.py (skip if task completed or deleted)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently - tasks can have due dates and reminders
 
@@ -262,27 +262,27 @@ This project uses a monorepo structure:
 
 ### Backend API Helm Chart
 
-- [ ] T105 Create backend-api Helm chart structure in infrastructure/helm/backend-api/ (Chart.yaml, values.yaml, templates/)
-- [ ] T106 Create backend-api deployment template in infrastructure/helm/backend-api/templates/deployment.yaml (with Dapr sidecar annotations)
-- [ ] T107 Create backend-api service template in infrastructure/helm/backend-api/templates/service.yaml (NodePort 30081)
-- [ ] T108 Create backend-api configmap template in infrastructure/helm/backend-api/templates/configmap.yaml
-- [ ] T109 [P] Create values-local.yaml overrides in infrastructure/helm/backend-api/values-local.yaml
-- [ ] T110 [P] Create values-cloud.yaml overrides in infrastructure/helm/backend-api/values-cloud.yaml
+- [X] T105 Create backend-api Helm chart structure in infrastructure/helm/backend-api/ (Chart.yaml, values.yaml, templates/)
+- [X] T106 Create backend-api deployment template in infrastructure/helm/backend-api/templates/deployment.yaml (with Dapr sidecar annotations)
+- [X] T107 Create backend-api service template in infrastructure/helm/backend-api/templates/service.yaml (NodePort 30081)
+- [X] T108 Create backend-api configmap template in infrastructure/helm/backend-api/templates/configmap.yaml
+- [X] T109 [P] Create values-local.yaml overrides in infrastructure/helm/backend-api/values-local.yaml
+- [X] T110 [P] Create values-cloud.yaml overrides in infrastructure/helm/backend-api/values-cloud.yaml
 
 ### Microservices Helm Charts
 
-- [ ] T111 [P] Create notification-service Helm chart in infrastructure/helm/notification-service/ (Chart.yaml, values.yaml, templates/)
-- [ ] T112 [P] Create recurring-task-service Helm chart in infrastructure/helm/recurring-task-service/ (Chart.yaml, values.yaml, templates/)
-- [ ] T113 [P] Create audit-service Helm chart in infrastructure/helm/audit-service/ (Chart.yaml, values.yaml, templates/)
-- [ ] T114 [P] Create websocket-service Helm chart in infrastructure/helm/websocket-service/ (Chart.yaml, values.yaml, templates/)
+- [X] T111 [P] Create notification-service Helm chart in infrastructure/helm/notification-service/ (Chart.yaml, values.yaml, templates/)
+- [X] T112 [P] Create recurring-task-service Helm chart in infrastructure/helm/recurring-task-service/ (Chart.yaml, values.yaml, templates/)
+- [X] T113 [P] Create audit-service Helm chart in infrastructure/helm/audit-service/ (Chart.yaml, values.yaml, templates/)
+- [X] T114 [P] Create websocket-service Helm chart in infrastructure/helm/websocket-service/ (Chart.yaml, values.yaml, templates/)
 
 ### Frontend Helm Chart
 
-- [ ] T115 Create frontend Helm chart structure in infrastructure/helm/frontend/ (Chart.yaml, values.yaml, templates/)
-- [ ] T116 Create frontend deployment template in infrastructure/helm/frontend/templates/deployment.yaml (no Dapr sidecar)
-- [ ] T117 Create frontend service template in infrastructure/helm/frontend/templates/service.yaml (NodePort 30080)
-- [ ] T118 [P] Create values-local.yaml overrides in infrastructure/helm/frontend/values-local.yaml
-- [ ] T119 [P] Create values-cloud.yaml overrides in infrastructure/helm/frontend/values-cloud.yaml
+- [X] T115 Create frontend Helm chart structure in infrastructure/helm/frontend/ (Chart.yaml, values.yaml, templates/)
+- [X] T116 Create frontend deployment template in infrastructure/helm/frontend/templates/deployment.yaml (no Dapr sidecar)
+- [X] T117 Create frontend service template in infrastructure/helm/frontend/templates/service.yaml (NodePort 30080)
+- [X] T118 [P] Create values-local.yaml overrides in infrastructure/helm/frontend/values-local.yaml
+- [X] T119 [P] Create values-cloud.yaml overrides in infrastructure/helm/frontend/values-cloud.yaml
 
 ### Deployment Scripts
 

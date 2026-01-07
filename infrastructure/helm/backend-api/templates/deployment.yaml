@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "backend-api.fullname" . }}
+  labels:
+    {{- include "backend-api.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "backend-api.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "backend-api.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+      - name: backend-api
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.service.targetPort }}
+          protocol: TCP
+        env:
+        # Database configuration
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "backend-api.fullname" . }}-secrets
+              key: database-url
+
+        # Better Auth configuration
+        - name: BETTER_AUTH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "backend-api.fullname" . }}-secrets
+              key: better-auth-secret
+        - name: BETTER_AUTH_ISSUER
+          value: {{ .Values.env.BETTER_AUTH_ISSUER | quote }}
+        - name: BETTER_AUTH_JWKS_URL
+          value: {{ .Values.env.BETTER_AUTH_JWKS_URL | quote }}
+
+        # OpenAI API key
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "backend-api.fullname" . }}-secrets
+              key: openai-api-key
+
+        # MCP Server URL
+        - name: MCP_SERVER_URL
+          value: {{ .Values.env.MCP_SERVER_URL | quote }}
+
+        # Dapr configuration
+        - name: DAPR_HTTP_PORT
+          value: {{ .Values.env.DAPR_HTTP_PORT | quote }}
+        - name: DAPR_GRPC_PORT
+          value: {{ .Values.env.DAPR_GRPC_PORT | quote }}
+
+        # Application configuration
+        - name: LOG_LEVEL
+          value: {{ .Values.env.LOG_LEVEL | quote }}
+        - name: CORS_ORIGINS
+          value: {{ .Values.env.CORS_ORIGINS | quote }}
+
+        # Load configuration from ConfigMap
+        envFrom:
+        - configMapRef:
+            name: {{ include "backend-api.fullname" . }}-config
+
+        # Liveness probe
+        {{- if .Values.livenessProbe }}
+        livenessProbe:
+          {{- toYaml .Values.livenessProbe | nindent 10 }}
+        {{- end }}
+
+        # Readiness probe
+        {{- if .Values.readinessProbe }}
+        readinessProbe:
+          {{- toYaml .Values.readinessProbe | nindent 10 }}
+        {{- end }}
+
+        # Resource limits and requests
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

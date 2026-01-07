@@ -1,0 +1,15 @@
+apiVersion: v2
+name: backend-api
+description: Backend API Helm chart for Evolution of Todo Phase V (FastAPI + MCP + Dapr)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - fastapi
+  - dapr
+  - backend
+  - todo
+  - microservices
+maintainers:
+  - name: Evolution of Todo Team
+    email: team@evolution-of-todo.example.com
