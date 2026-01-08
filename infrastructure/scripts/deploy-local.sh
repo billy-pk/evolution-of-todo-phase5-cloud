@@ -111,7 +111,8 @@ start_minikube() {
     print_success "Minikube is already running"
   else
     print_step "Starting Minikube..."
-    minikube start --cpus=4 --memory=8192
+    # Use 6GB for WSL2/Docker Desktop compatibility (7862MB system limit)
+    minikube start --driver=docker --cpus=4 --memory=6144
     print_success "Minikube started"
   fi
 

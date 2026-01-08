@@ -199,3 +199,7 @@ watchfiles==1.1.1
     # via uvicorn
 websockets==15.0.1
     # via uvicorn
+
+# Dapr SDK
+dapr==1.14.0
+dapr-ext-grpc==1.14.0

@@ -1,5 +1,5 @@
 # WebSocket Service Dockerfile
-# Multi-stage build for Python 3.13 microservice with WebSocket support
+# Multi-stage build for Python 3.13 microservice
 
 # Stage 1: Builder
 FROM python:3.13-slim AS builder
@@ -27,17 +27,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Python dependencies from builder
-COPY --from=builder /root/.local /root/.local
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser
 
-# Make sure scripts in .local are usable
-ENV PATH=/root/.local/bin:$PATH
+# Copy Python dependencies from builder to appuser's home
+COPY --from=builder /root/.local /home/appuser/.local
+RUN chown -R appuser:appuser /home/appuser/.local
+
+# Make sure scripts and modules in .local are usable
+ENV PATH=/home/appuser/.local/bin:$PATH
+ENV PYTHONPATH=/home/appuser/.local/lib/python3.13/site-packages:$PYTHONPATH
 
 # Copy application code
 COPY . .
+RUN chown -R appuser:appuser /app
 
-# Create non-root user for security
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Expose port (Dapr sidecar will communicate via this)

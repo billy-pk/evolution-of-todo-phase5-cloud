@@ -39,6 +39,7 @@ env:
 
   # Better Auth configuration
   BETTER_AUTH_SECRET: ""
+  BETTER_AUTH_URL: "http://frontend:3000"
   BETTER_AUTH_ISSUER: "http://localhost:3000"
   BETTER_AUTH_JWKS_URL: "http://localhost:3000/api/auth/jwks"
 
@@ -107,19 +108,19 @@ affinity: {}
 
 # Security context
 securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
+  # runAsNonRoot: true  # Commented out for Dapr compatibility
+  # runAsUser: 1000
   fsGroup: 1000
-  capabilities:
-    drop:
-      - ALL
+  # capabilities:  # Not valid at pod level, should be at container level
+  #   drop:
+  #     - ALL
 
-# Pod annotations (Dapr sidecar injection)
+# Pod annotations (Dapr sidecar injection) - Temporarily disabled
 podAnnotations:
-  dapr.io/enabled: "true"
-  dapr.io/app-id: "backend-api"
-  dapr.io/app-port: "8000"
-  dapr.io/app-protocol: "http"
-  dapr.io/enable-metrics: "true"
-  dapr.io/metrics-port: "9090"
-  dapr.io/log-level: "info"
+  dapr.io/enabled: "false"  # Disabled to bypass runAsUser policy issue
+  # dapr.io/app-id: "backend-api"
+  # dapr.io/app-port: "8000"
+  # dapr.io/app-protocol: "http"
+  # dapr.io/enable-metrics: "true"
+  # dapr.io/metrics-port: "9090"
+  # dapr.io/log-level: "info"

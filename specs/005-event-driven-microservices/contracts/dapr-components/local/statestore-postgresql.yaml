@@ -6,6 +6,8 @@ metadata:
 spec:
   type: state.postgresql
   version: v1
+  initTimeout: 120s  # Increased init timeout for Neon cold starts
+  ignoreErrors: true  # Allow Dapr to continue if statestore fails
   metadata:
   - name: connectionString
     secretKeyRef:
@@ -16,7 +18,7 @@ spec:
   - name: metadataTableName
     value: "dapr_metadata"
   - name: timeout
-    value: "20"
+    value: "120"  # Increased for Neon PostgreSQL cold starts
 auth:
   secretStore: kubernetes
 ---

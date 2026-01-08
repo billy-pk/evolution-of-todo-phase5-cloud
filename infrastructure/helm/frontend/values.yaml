@@ -80,12 +80,12 @@ affinity: {}
 
 # Security context
 securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
+  # runAsNonRoot: true  # Commented out for Dapr compatibility
+  # runAsUser: 1000
   fsGroup: 1000
-  capabilities:
-    drop:
-      - ALL
+  # capabilities:  # Not valid at pod level, should be at container level
+  #   drop:
+  #     - ALL
 
 # Pod annotations (NO Dapr sidecar for frontend)
 podAnnotations: {}

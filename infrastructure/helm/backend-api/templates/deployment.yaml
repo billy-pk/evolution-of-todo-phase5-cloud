@@ -48,6 +48,8 @@ spec:
             secretKeyRef:
               name: {{ include "backend-api.fullname" . }}-secrets
               key: better-auth-secret
+        - name: BETTER_AUTH_URL
+          value: {{ .Values.env.BETTER_AUTH_URL | default .Values.env.BETTER_AUTH_ISSUER | quote }}
         - name: BETTER_AUTH_ISSUER
           value: {{ .Values.env.BETTER_AUTH_ISSUER | quote }}
         - name: BETTER_AUTH_JWKS_URL
