@@ -46,7 +46,19 @@ allowed_hosts_list = [
     "localhost:*",  # localhost with any port
     "127.0.0.1",  # Exact match for loopback (no port)
     "127.0.0.1:*",  # loopback with any port
+    "mcp-server",  # Kubernetes service name
+    "mcp-server:*", # Kubernetes service with port
 ]
+
+# Add hosts from environment variable if provided (comma-separated)
+env_hosts = os.environ.get("ALLOWED_HOSTS")
+if env_hosts:
+    for host in env_hosts.split(","):
+        host = host.strip()
+        if host:
+            allowed_hosts_list.append(host)
+            if ":" not in host:
+                allowed_hosts_list.append(f"{host}:*")
 
 # Add Render hostname if available (both with and without port)
 if RENDER_HOSTNAME:

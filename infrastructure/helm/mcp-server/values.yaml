@@ -5,7 +5,7 @@ replicaCount: 1
 image:
   repository: ai-todo-mcp
   pullPolicy: IfNotPresent
-  tag: "latest"
+  tag: "v4"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -34,6 +34,9 @@ env:
   
   # Auth
   BETTER_AUTH_SECRET: ""
+
+  # Allowed Hosts for MCP Server (comma-separated)
+  ALLOWED_HOSTS: "mcp-server,mcp-server.default.svc.cluster.local"
 
   # Logging
   LOG_LEVEL: "info"
