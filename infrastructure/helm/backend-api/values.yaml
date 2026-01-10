@@ -7,7 +7,7 @@ replicaCount: 1
 image:
   repository: backend-api
   pullPolicy: IfNotPresent
-  tag: "latest"
+  tag: "v2"
 
 imagePullSecrets: []
 nameOverride: ""

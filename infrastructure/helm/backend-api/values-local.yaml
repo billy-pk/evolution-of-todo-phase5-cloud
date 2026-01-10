@@ -6,7 +6,7 @@
 image:
   repository: backend-api
   pullPolicy: Never  # Use local Docker images (built with `docker build`)
-  tag: "latest"
+  tag: "v2"
 
 # Service configuration for local development
 service:
