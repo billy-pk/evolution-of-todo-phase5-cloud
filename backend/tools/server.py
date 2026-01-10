@@ -204,8 +204,13 @@ def add_task(
             "error": "Priority must be one of: low, normal, high, critical"
         }
 
+    # Default recurrence_interval to 1 if pattern provided but interval missing
+    if recurrence_pattern and recurrence_interval is None:
+        recurrence_interval = 1
+
     # Validate recurrence parameters
     if recurrence_pattern and not recurrence_interval:
+        # Should not happen due to default above, but keeping for safety
         return {
             "status": "error",
             "error": "recurrence_interval is required when recurrence_pattern is specified"
@@ -820,8 +825,13 @@ def update_task(
             "error": "Priority must be one of: low, normal, high, critical"
         }
 
+    # Default recurrence_interval to 1 if pattern provided but interval missing
+    if recurrence_pattern and recurrence_interval is None:
+        recurrence_interval = 1
+
     # Validate recurrence parameters
     if recurrence_pattern and not recurrence_interval:
+        # Should not happen due to default above, but keeping for safety
         return {
             "status": "error",
             "error": "recurrence_interval is required when recurrence_pattern is specified"
