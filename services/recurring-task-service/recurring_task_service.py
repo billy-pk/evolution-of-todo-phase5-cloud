@@ -96,7 +96,7 @@ async def health_check():
     return {"status": "healthy", "service": "recurring-task-service"}
 
 
-@app.post("/dapr/subscribe")
+@app.get("/dapr/subscribe")
 async def subscribe():
     """
     Dapr subscription endpoint.

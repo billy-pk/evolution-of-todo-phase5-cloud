@@ -5,7 +5,7 @@ replicaCount: 1
 image:
   repository: notification-service
   pullPolicy: IfNotPresent
-  tag: "latest"
+  tag: "v2"
 
 imagePullSecrets: []
 nameOverride: ""

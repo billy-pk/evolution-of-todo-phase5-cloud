@@ -123,7 +123,7 @@ async def handle_task_event(request: Request):
             from sqlalchemy import text
             import json
 
-            session.exec(
+            session.execute(
                 text(insert_query),
                 {
                     "id": str(uuid4()),
