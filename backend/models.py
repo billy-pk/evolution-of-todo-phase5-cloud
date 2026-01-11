@@ -211,7 +211,7 @@ class RecurrenceRule(SQLModel, table=True):
 
     rule_metadata: Optional[dict] = Field(
         default=None,
-        sa_column=Column(JSON),
+        sa_column=Column("metadata", JSON),
         description="JSON metadata preserving task attributes (priority, tags, description)"
     )
 

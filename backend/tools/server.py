@@ -281,7 +281,20 @@ def add_task(
     try:
         # Use provided session or create new one
         if _session:
-            # Create RecurrenceRule if recurrence specified
+            # Create task first (without recurrence_id for now)
+            task = Task(
+                user_id=user_id,
+                title=title.strip(),
+                description=description,
+                priority=priority,
+                tags=normalized_tags,
+                due_date=parsed_due_date,
+                recurrence_id=None  # Will be set after RecurrenceRule is created
+            )
+            _session.add(task)
+            _session.flush()  # Get task ID without committing
+
+            # Create RecurrenceRule if recurrence specified (needs task_id)
             recurrence_rule_id = None
             if recurrence_pattern:
                 metadata = RecurrenceService.create_recurrence_metadata(
@@ -290,26 +303,20 @@ def add_task(
                 )
                 recurrence_rule = RecurrenceRule(
                     id=uuid4(),
+                    task_id=task.id,  # ✅ Now we have task_id
+                    user_id=user_id,  # ✅ Add user_id
                     pattern=recurrence_pattern,
                     interval=recurrence_interval,
-                    metadata=metadata
+                    rule_metadata=metadata  # ✅ Use Python field name, not DB column name
                 )
                 _session.add(recurrence_rule)
                 _session.flush()  # Get ID without committing
                 recurrence_rule_id = recurrence_rule.id
 
-            # Create task
-            task = Task(
-                user_id=user_id,
-                title=title.strip(),
-                description=description,
-                priority=priority,
-                tags=normalized_tags,
-                due_date=parsed_due_date,
-                recurrence_id=recurrence_rule_id
-            )
-            _session.add(task)
-            _session.flush()  # Get task ID without committing
+                # Update task with recurrence_id
+                task.recurrence_id = recurrence_rule_id
+                _session.add(task)  # Mark as modified
+                _session.flush()
 
             # Create Reminder if reminder_offset specified
             reminder_id = None
@@ -383,7 +390,20 @@ def add_task(
             }
         else:
             with Session(engine) as session:
-                # Create RecurrenceRule if recurrence specified
+                # Create task first (without recurrence_id for now)
+                task = Task(
+                    user_id=user_id,
+                    title=title.strip(),
+                    description=description,
+                    priority=priority,
+                    tags=normalized_tags,
+                    due_date=parsed_due_date,
+                    recurrence_id=None  # Will be set after RecurrenceRule is created
+                )
+                session.add(task)
+                session.flush()  # Get task ID without committing
+
+                # Create RecurrenceRule if recurrence specified (needs task_id)
                 recurrence_rule_id = None
                 if recurrence_pattern:
                     metadata = RecurrenceService.create_recurrence_metadata(
@@ -392,26 +412,20 @@ def add_task(
                     )
                     recurrence_rule = RecurrenceRule(
                         id=uuid4(),
+                        task_id=task.id,  # ✅ Now we have task_id
+                        user_id=user_id,  # ✅ Add user_id
                         pattern=recurrence_pattern,
                         interval=recurrence_interval,
-                        metadata=metadata
+                        rule_metadata=metadata  # ✅ Use Python field name, not DB column name
                     )
                     session.add(recurrence_rule)
                     session.flush()  # Get ID without committing
                     recurrence_rule_id = recurrence_rule.id
 
-                # Create task
-                task = Task(
-                    user_id=user_id,
-                    title=title.strip(),
-                    description=description,
-                    priority=priority,
-                    tags=normalized_tags,
-                    due_date=parsed_due_date,
-                    recurrence_id=recurrence_rule_id
-                )
-                session.add(task)
-                session.flush()  # Get task ID without committing
+                    # Update task with recurrence_id
+                    task.recurrence_id = recurrence_rule_id
+                    session.add(task)  # Mark as modified
+                    session.flush()
 
                 # Create Reminder if reminder_offset specified
                 reminder_id = None
@@ -920,7 +934,7 @@ def update_task(
                         if recurrence_rule:
                             recurrence_rule.pattern = recurrence_pattern
                             recurrence_rule.interval = recurrence_interval
-                            recurrence_rule.metadata = RecurrenceService.create_recurrence_metadata(
+                            recurrence_rule.rule_metadata = RecurrenceService.create_recurrence_metadata(
                                 pattern=recurrence_pattern,
                                 current_date=parsed_due_date or task.due_date or datetime.now(UTC)
                             )
@@ -935,9 +949,8 @@ def update_task(
                             id=uuid4(),
                             pattern=recurrence_pattern,
                             interval=recurrence_interval,
-                            metadata=metadata
-                        )
-                        _session.add(recurrence_rule)
+                                                rule_metadata=metadata
+                                            )                        _session.add(recurrence_rule)
                         _session.flush()
                         task.recurrence_id = recurrence_rule.id
 
@@ -1014,7 +1027,7 @@ def update_task(
                             if recurrence_rule:
                                 recurrence_rule.pattern = recurrence_pattern
                                 recurrence_rule.interval = recurrence_interval
-                                recurrence_rule.metadata = RecurrenceService.create_recurrence_metadata(
+                                recurrence_rule.rule_metadata = RecurrenceService.create_recurrence_metadata(
                                     pattern=recurrence_pattern,
                                     current_date=parsed_due_date or task.due_date or datetime.now(UTC)
                                 )
@@ -1029,9 +1042,8 @@ def update_task(
                                 id=uuid4(),
                                 pattern=recurrence_pattern,
                                 interval=recurrence_interval,
-                                metadata=metadata
-                            )
-                            session.add(recurrence_rule)
+                                                    rule_metadata=metadata
+                                                )                            session.add(recurrence_rule)
                             session.flush()
                             task.recurrence_id = recurrence_rule.id
 
