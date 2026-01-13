@@ -1,0 +1,72 @@
+# Default values for mcp-server Helm chart
+
+replicaCount: 1
+
+image:
+  repository: ai-todo-mcp
+  pullPolicy: IfNotPresent
+  tag: "v4"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Service configuration
+service:
+  type: ClusterIP  # Only needs to be accessed by backend-api via Dapr or internal network
+  port: 8001
+  targetPort: 8001
+
+# Dapr sidecar configuration
+dapr:
+  enabled: true
+  appId: mcp-server
+  appPort: 8001
+  appProtocol: http
+  enableMetrics: true
+  metricsPort: 9090
+  logLevel: info
+
+# Environment variables
+env:
+  # Database connection
+  DATABASE_URL: ""
+  
+  # Auth
+  BETTER_AUTH_SECRET: ""
+
+  # Allowed Hosts for MCP Server (comma-separated)
+  ALLOWED_HOSTS: "mcp-server,mcp-server.default.svc.cluster.local"
+
+  # Logging
+  LOG_LEVEL: "info"
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 250m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Liveness and readiness probes
+livenessProbe:
+  tcpSocket:
+    port: 8001
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  tcpSocket:
+    port: 8001
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,13 @@
+# Patterns to ignore when building packages.
+.DS_Store
+.git/
+.gitignore
+*.swp
+*.bak
+*.tmp
+*~
+.idea/
+.vscode/
+values-local.yaml
+values-cloud.yaml
+README.md

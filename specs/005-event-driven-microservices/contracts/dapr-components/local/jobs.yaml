@@ -1,27 +1,14 @@
-apiVersion: dapr.io/v1alpha1
-kind: Component
-metadata:
-  name: jobs
-  namespace: default
-spec:
-  type: jobs.postgresql
-  version: v1
-  metadata:
-  - name: connectionString
-    secretKeyRef:
-      name: postgres-credentials
-      key: connectionString
-  - name: tableName
-    value: "dapr_jobs"  # Table for scheduled jobs
-  - name: metadataTableName
-    value: "dapr_jobs_metadata"
-  - name: timeout
-    value: "20"
-  - name: cleanupIntervalInSeconds
-    value: "3600"  # Clean up completed jobs every hour
-auth:
-  secretStore: kubernetes
----
-# Note: Dapr Jobs API uses PostgreSQL for persistent job storage
-# Jobs survive pod restarts and are executed exactly once
-# Used for reminder scheduling with dynamic due dates
+# Note: Dapr Jobs API does NOT use a component
+# The Scheduler service uses an embedded etcd database for job storage
+# No additional configuration is required - jobs are managed automatically by Dapr
+#
+# The Scheduler service is part of the Dapr control plane and:
+# - Stores all jobs in an embedded etcd instance
+# - Requires no additional configuration
+# - Jobs survive pod restarts and are executed exactly once
+#
+# Reference: https://docs.dapr.io/concepts/dapr-services/scheduler/
+#
+# REMOVED: The invalid 'jobs.postgresql' component
+# Reason: jobs.postgresql is not a valid Dapr component type.
+# The Scheduler service handles job storage internally.

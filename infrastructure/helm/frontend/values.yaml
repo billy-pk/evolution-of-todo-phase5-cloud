@@ -1,0 +1,91 @@
+# Default values for frontend Helm chart
+# This file contains default configuration values that can be overridden
+# by values-local.yaml (Minikube) or values-cloud.yaml (OKE)
+
+replicaCount: 1
+
+image:
+  repository: frontend
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Service configuration
+service:
+  type: NodePort
+  port: 3000
+  targetPort: 3000
+  nodePort: 30080  # Fixed NodePort for local development
+
+# Environment variables
+env:
+  # Next.js configuration
+  NODE_ENV: "production"
+  NEXT_PUBLIC_API_URL: "http://localhost:30081"  # Backend API URL
+
+  # Better Auth configuration
+  BETTER_AUTH_SECRET: ""  # IMPORTANT: Set via --set-string during helm install
+  BETTER_AUTH_URL: "http://localhost:30080"
+  DATABASE_URL: ""  # IMPORTANT: Set via --set-string during helm install (for Better Auth)
+
+# ConfigMap for application configuration
+configMap:
+  enabled: true
+  data:
+    APP_NAME: "evolution-of-todo-frontend"
+    ENVIRONMENT: "local"
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# Liveness and readiness probes
+livenessProbe:
+  httpGet:
+    path: /
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Autoscaling configuration (disabled by default)
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+# Node selector, tolerations, and affinity
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Security context
+securityContext:
+  # runAsNonRoot: true  # Commented out for Dapr compatibility
+  # runAsUser: 1000
+  fsGroup: 1000
+  # capabilities:  # Not valid at pod level, should be at container level
+  #   drop:
+  #     - ALL
+
+# Pod annotations (NO Dapr sidecar for frontend)
+podAnnotations: {}

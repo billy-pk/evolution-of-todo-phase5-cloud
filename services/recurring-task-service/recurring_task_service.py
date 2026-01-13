@@ -96,7 +96,7 @@ async def health_check():
     return {"status": "healthy", "service": "recurring-task-service"}
 
 
-@app.post("/dapr/subscribe")
+@app.get("/dapr/subscribe")
 async def subscribe():
     """
     Dapr subscription endpoint.
@@ -228,7 +228,7 @@ async def process_recurring_task(
                 current_date=current_due_date,
                 pattern=recurrence_rule.pattern,
                 interval=recurrence_rule.interval,
-                metadata=recurrence_rule.metadata
+                metadata=recurrence_rule.rule_metadata
             )
 
             logger.info(

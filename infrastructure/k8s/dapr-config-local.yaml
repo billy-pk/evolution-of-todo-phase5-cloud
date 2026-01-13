@@ -1,0 +1,38 @@
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: dapr-config-local
+  namespace: default  # Must be in the same namespace as the application
+spec:
+  tracing:
+    samplingRate: "1"
+  metric:
+    enabled: true
+  mtls:
+    enabled: false  # Disabled for local development - no Sentry certificate needed
+    allowedClockSkew: 15m
+    controlPlaneTrustDomain: cluster.local
+    sentryAddress: dapr-sentry.dapr-system.svc.cluster.local:443
+  accessControl:
+    defaultAction: allow
+    trustDomain: cluster.local
+---
+# Also create in dapr-system namespace in case Dapr sidecar looks there
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: dapr-config-local
+  namespace: dapr-system
+spec:
+  tracing:
+    samplingRate: "1"
+  metric:
+    enabled: true
+  mtls:
+    enabled: false  # Disabled for local development - no Sentry certificate needed
+    allowedClockSkew: 15m
+    controlPlaneTrustDomain: cluster.local
+    sentryAddress: dapr-sentry.dapr-system.svc.cluster.local:443
+  accessControl:
+    defaultAction: allow
+    trustDomain: cluster.local

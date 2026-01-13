@@ -1,0 +1,94 @@
+# values-local.yaml
+# Overrides for local Minikube deployment
+# Usage: helm install backend-api ./backend-api -f values-local.yaml
+
+# Image configuration for local development
+image:
+  repository: backend-api
+  pullPolicy: Never  # Use local Docker images (built with `docker build`)
+  tag: "v2"
+
+# Service configuration for local development
+service:
+  type: NodePort
+  port: 8000
+  targetPort: 8000
+  nodePort: 30081  # Fixed NodePort for easy local access (http://localhost:30081)
+
+# Dapr configuration for local development
+dapr:
+  enabled: true
+  appId: backend-api
+  appPort: 8000
+  appProtocol: http
+  enableMetrics: true
+  metricsPort: 9090
+  logLevel: debug  # Verbose logging for local debugging
+  componentsPath: /dapr-components/local  # Local Dapr components (Redpanda Docker, no auth)
+
+# Environment variables for local development
+env:
+  # Database connection (Neon PostgreSQL)
+  # IMPORTANT: Set this value using --set-string during helm install
+  # Example: helm install backend-api ./backend-api -f values-local.yaml --set-string env.DATABASE_URL="postgresql://..."
+  DATABASE_URL: ""
+
+  # Better Auth configuration (local frontend)
+  BETTER_AUTH_SECRET: ""  # IMPORTANT: Set this via --set-string
+  BETTER_AUTH_ISSUER: "http://localhost:30080"  # Frontend NodePort
+  BETTER_AUTH_JWKS_URL: "http://localhost:30080/api/auth/jwks"
+
+  # OpenAI API key
+  # IMPORTANT: Set this value using --set-string during helm install
+  OPENAI_API_KEY: ""
+
+  # MCP Server URL (local development, running in same cluster)
+  MCP_SERVER_URL: "http://mcp-server:8001"
+
+  # Dapr ports (default Dapr sidecar ports)
+  DAPR_HTTP_PORT: "3500"
+  DAPR_GRPC_PORT: "50001"
+
+  # Application configuration
+  LOG_LEVEL: "debug"  # Verbose logging for local debugging
+  CORS_ORIGINS: "http://localhost:30080,http://localhost:3000"  # Allow local frontend
+
+# ConfigMap for local environment
+configMap:
+  enabled: true
+  data:
+    APP_NAME: "evolution-of-todo-backend"
+    ENVIRONMENT: "local"
+    DAPR_PUBSUB_NAME: "pubsub"
+    DAPR_STATESTORE_NAME: "statestore"
+
+# Resource limits for local development (reduced for Minikube)
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m  # Lower request for Minikube resource constraints
+    memory: 128Mi
+
+# Autoscaling disabled for local development
+autoscaling:
+  enabled: false
+
+# Pod annotations for Dapr sidecar injection (local configuration)
+podAnnotations:
+  dapr.io/enabled: "true"
+  dapr.io/app-id: "backend-api"
+  dapr.io/app-port: "8000"
+  dapr.io/app-protocol: "http"
+  dapr.io/enable-metrics: "true"
+  dapr.io/metrics-port: "9090"
+  dapr.io/log-level: "debug"
+  dapr.io/config: "dapr-config-local"
+  dapr.io/env: "DAPR_UNSAFE_SKIP_CONTAINER_UID_GID_CHECK=true"
+
+# Security context (relaxed for local development)
+securityContext:
+  runAsNonRoot: false  # Allow root for local debugging
+  runAsUser: 0
+  fsGroup: 0

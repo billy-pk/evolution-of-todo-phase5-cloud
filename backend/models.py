@@ -209,9 +209,9 @@ class RecurrenceRule(SQLModel, table=True):
         description="Every N days/weeks/months (must be positive)"
     )
 
-    metadata: Optional[dict] = Field(
+    rule_metadata: Optional[dict] = Field(
         default=None,
-        sa_column=Column(JSON),
+        sa_column=Column("metadata", JSON),
         description="JSON metadata preserving task attributes (priority, tags, description)"
     )
 
