@@ -47,6 +47,10 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Copy external packages that aren't bundled by Next.js standalone
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/ws ./node_modules/ws
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@neondatabase ./node_modules/@neondatabase
+
 USER nextjs
 
 # Expose port

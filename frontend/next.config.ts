@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   // Optimize for Vercel deployment
   output: 'standalone',
 
+  // Include ws and neon serverless in standalone build
+  serverExternalPackages: ['ws', '@neondatabase/serverless'],
+
   // Ensure environment variables are available
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,

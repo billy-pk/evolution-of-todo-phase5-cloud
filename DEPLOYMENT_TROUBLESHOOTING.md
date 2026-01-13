@@ -300,6 +300,194 @@ Should return MCP server information (not an error).
 
 ---
 
+## Kubernetes/Minikube Deployment Issues
+
+### Issue 7: ETIMEDOUT Connecting to Neon from Node.js in Kubernetes
+
+**Symptoms:**
+```
+Error: AggregateError
+  code: 'ETIMEDOUT'
+```
+- Frontend pod cannot connect to Neon PostgreSQL
+- Backend pod (Python) CAN connect to same database
+- `nc` and `wget` from frontend pod work, but Node.js fails
+- Error occurs with both direct and pooler Neon URLs
+
+**Root Cause:**
+Node.js's Happy Eyeballs implementation (`autoSelectFamily`) tries to connect to IPv4 and IPv6 addresses concurrently. In containerized Kubernetes environments, this concurrent connection attempt causes timeouts, even though sequential connections work fine.
+
+**Solution:**
+Add the following to `frontend/lib/auth.ts` (or any file that loads early):
+
+```typescript
+import dns from "dns";
+import net from "net";
+
+// Fix for Node.js Happy Eyeballs issue in containerized environments
+// Disable concurrent IPv4/IPv6 connection attempts
+net.setDefaultAutoSelectFamily(false);
+
+// Also prioritize IPv4 for DNS resolution
+dns.setDefaultResultOrder("ipv4first");
+```
+
+**Verification:**
+```bash
+# Test from frontend pod - should work after fix
+kubectl exec <frontend-pod> -- node -e '
+const net = require("net");
+net.setDefaultAutoSelectFamily(false);
+const socket = net.connect(443, "ep-divine-feather-a4qc11zk.us-east-1.aws.neon.tech", () => {
+  console.log("Connected!");
+  socket.end();
+});
+'
+```
+
+**After fix, rebuild and redeploy:**
+```bash
+eval $(minikube docker-env)
+docker build -t frontend:latest ./frontend
+kubectl rollout restart deployment frontend
+```
+
+### Issue 8: JWKS Decryption Error After Changing BETTER_AUTH_SECRET
+
+**Symptoms:**
+```
+BetterAuthError: Failed to decrypt private key. Make sure the secret currently
+in use is the same as the one used to encrypt the private key.
+```
+- Sign-in redirects back to sign-in page
+- User appears to authenticate but session doesn't persist
+
+**Root Cause:**
+Better Auth stores JWKS (JSON Web Key Set) keys in the database, encrypted with the `BETTER_AUTH_SECRET`. If the secret changes, the stored keys cannot be decrypted.
+
+**Solution:**
+Clean the JWKS table in the database:
+
+```bash
+# Option 1: Using backend pod with psycopg2
+kubectl exec <backend-pod> -- python3 -c "
+import psycopg2
+conn = psycopg2.connect('YOUR_DATABASE_URL')
+cur = conn.cursor()
+cur.execute('DELETE FROM jwks')
+conn.commit()
+print('JWKS table cleaned')
+conn.close()
+"
+
+# Option 2: Using psql directly
+psql YOUR_DATABASE_URL -c "DELETE FROM jwks;"
+```
+
+Then restart the frontend to regenerate keys:
+```bash
+kubectl rollout restart deployment frontend
+```
+
+**Prevention:**
+- Never change `BETTER_AUTH_SECRET` in production without cleaning JWKS
+- Keep the secret consistent across all deployments (frontend and backend)
+- Store the secret securely and don't regenerate unnecessarily
+
+### Issue 9: Port-Forward Issues with Kubernetes Services
+
+**Symptoms:**
+- Cannot access services at localhost
+- Connection refused or timeout when accessing localhost:3000 or localhost:8000
+
+**Solution:**
+Ensure port-forwards are running:
+```bash
+# Kill any stale port-forwards
+pkill -f "kubectl port-forward" 2>/dev/null
+
+# Start fresh port-forwards
+kubectl port-forward svc/frontend 3000:3000 &
+kubectl port-forward svc/backend-api 8000:8000 &
+
+# Verify they're running
+ps aux | grep "port-forward"
+```
+
+**Check service endpoints:**
+```bash
+kubectl get svc
+kubectl get endpoints
+```
+
+### Issue 10: Secrets Mismatch Between Services
+
+**Symptoms:**
+- JWT validation fails
+- "Invalid token signature" errors
+- Sign-in works but API calls fail
+
+**Solution:**
+Verify secrets match across all services:
+```bash
+# Check frontend secret
+kubectl get secret frontend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
+
+# Check backend secret
+kubectl get secret backend-api-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
+
+# They must be EXACTLY the same
+```
+
+If they don't match, update the secrets:
+```bash
+SECRET="YourSecretHere"
+kubectl patch secret frontend-secrets -p "{\"data\":{\"better-auth-secret\":\"$(echo -n $SECRET | base64 -w0)\"}}"
+kubectl patch secret backend-api-secrets -p "{\"data\":{\"better-auth-secret\":\"$(echo -n $SECRET | base64 -w0)\"}}"
+
+# Restart deployments
+kubectl rollout restart deployment frontend backend-api
+```
+
+### Minikube Debug Commands
+
+```bash
+# Check all pods status
+kubectl get pods -o wide
+
+# Check pod logs
+kubectl logs -l app.kubernetes.io/name=frontend --tail=50
+kubectl logs -l app.kubernetes.io/name=backend-api --tail=50
+
+# Check secrets exist
+kubectl get secrets
+
+# Test database connectivity from backend pod
+kubectl exec <backend-pod> -- python3 -c "
+import psycopg2
+conn = psycopg2.connect('YOUR_DATABASE_URL')
+print('Database connected!')
+conn.close()
+"
+
+# Test from frontend pod (after fix applied)
+kubectl exec <frontend-pod> -- node -e "
+const net = require('net');
+net.setDefaultAutoSelectFamily(false);
+const { Pool } = require('pg');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+pool.query('SELECT 1').then(() => console.log('DB OK')).catch(e => console.log('Error:', e.message));
+"
+
+# Check service endpoints
+kubectl get endpoints frontend backend-api
+
+# View Dapr sidecar logs (if using Dapr)
+kubectl logs <pod-name> -c daprd
+```
+
+---
+
 ## Getting Help
 
 If issues persist after following this guide:

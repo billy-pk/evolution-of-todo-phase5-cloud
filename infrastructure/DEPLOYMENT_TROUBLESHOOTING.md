@@ -394,6 +394,140 @@ kubectl port-forward svc/backend-api 8000:8000
 
 ---
 
+## Issue 6: Node.js ETIMEDOUT to Neon PostgreSQL (CRITICAL)
+
+### Problem
+Frontend pod (Node.js) cannot connect to Neon PostgreSQL:
+```
+Error: AggregateError
+  code: 'ETIMEDOUT'
+```
+
+Peculiar symptoms:
+- Backend pod (Python/psycopg2) connects successfully
+- `wget` and `nc` from frontend pod work fine
+- Only Node.js TCP connections timeout
+- Both direct and pooler Neon URLs fail
+
+### Root Cause
+**Node.js Happy Eyeballs (RFC 6555)** - The `autoSelectFamily` feature tries to connect to IPv4 and IPv6 addresses concurrently. In containerized Kubernetes environments, this concurrent connection behavior causes timeouts.
+
+When connecting to Neon:
+1. DNS returns multiple IPv4 and IPv6 addresses
+2. Node.js tries connecting to all simultaneously
+3. IPv6 connections fail (ENETUNREACH)
+4. The concurrent failure handling causes IPv4 connections to timeout
+
+### Investigation
+```bash
+# This WORKS (explicit IP with family:4)
+kubectl exec <frontend-pod> -- node -e '
+const net = require("net");
+const socket = net.connect({ host: "35.171.11.169", port: 443, family: 4 }, () => {
+  console.log("Connected!");
+});
+'
+
+# This FAILS (hostname - uses autoSelectFamily)
+kubectl exec <frontend-pod> -- node -e '
+const net = require("net");
+const socket = net.connect(443, "ep-divine-feather-a4qc11zk.us-east-1.aws.neon.tech", () => {
+  console.log("Connected!");
+});
+'
+
+# This WORKS (autoSelectFamily disabled)
+kubectl exec <frontend-pod> -- node -e '
+const net = require("net");
+net.setDefaultAutoSelectFamily(false);
+const socket = net.connect(443, "ep-divine-feather-a4qc11zk.us-east-1.aws.neon.tech", () => {
+  console.log("Connected!");
+});
+'
+```
+
+### Solution
+Add to `frontend/lib/auth.ts` (or instrumentation file):
+
+```typescript
+import dns from "dns";
+import net from "net";
+
+// Fix for Node.js Happy Eyeballs issue in containerized environments
+// Disable concurrent IPv4/IPv6 connection attempts
+net.setDefaultAutoSelectFamily(false);
+
+// Prioritize IPv4 for DNS resolution
+dns.setDefaultResultOrder("ipv4first");
+```
+
+### After Fix
+```bash
+# Rebuild frontend image
+eval $(minikube docker-env)
+docker build -t frontend:latest ./frontend
+
+# Redeploy
+kubectl rollout restart deployment frontend
+
+# Test
+kubectl logs -l app.kubernetes.io/name=frontend --tail=20
+# Should show successful database connection
+```
+
+### Status
+✅ **RESOLVED** - Frontend connects to Neon PostgreSQL successfully
+
+---
+
+## Issue 7: JWKS Decryption Error (CRITICAL)
+
+### Problem
+Sign-in redirects back to sign-in page with error:
+```
+BetterAuthError: Failed to decrypt private key. Make sure the secret currently
+in use is the same as the one used to encrypt the private key.
+```
+
+### Root Cause
+Better Auth stores JWKS (JSON Web Key Set) keys in the `jwks` database table, encrypted with `BETTER_AUTH_SECRET`. If the secret changes (e.g., during redeployment, secret rotation, or testing), the stored keys cannot be decrypted.
+
+### Solution
+Clean the JWKS table:
+
+```bash
+# Option 1: Via backend pod
+BACKEND_POD=$(kubectl get pod -l app.kubernetes.io/name=backend-api -o jsonpath='{.items[0].metadata.name}')
+
+kubectl exec $BACKEND_POD -- python3 -c "
+import psycopg2
+conn = psycopg2.connect('YOUR_DATABASE_URL')
+cur = conn.cursor()
+cur.execute('DELETE FROM jwks')
+conn.commit()
+print('JWKS table cleaned')
+conn.close()
+"
+
+# Option 2: Direct psql
+psql YOUR_DATABASE_URL -c "DELETE FROM jwks;"
+```
+
+Then restart frontend:
+```bash
+kubectl rollout restart deployment frontend
+```
+
+### Prevention
+- Keep `BETTER_AUTH_SECRET` consistent across deployments
+- When changing secrets, always clean JWKS table
+- Document the secret in secure storage (not in git)
+
+### Status
+✅ **RESOLVED** - New JWKS keys generated with current secret
+
+---
+
 ## References
 
 - Dapr Kubernetes Configuration: https://docs.dapr.io/operations/hosting/kubernetes/
