@@ -1,0 +1,61 @@
+# Local Minikube values for audit-service
+# Overrides values.yaml for local development
+
+image:
+  pullPolicy: Never  # Use local Docker images from Minikube
+  tag: "latest"
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8004
+  targetPort: 8004
+
+# Dapr sidecar configuration
+dapr:
+  enabled: true
+  appId: audit-service
+  appPort: 8004
+  appProtocol: http
+  enableMetrics: true
+  metricsPort: 9090
+  logLevel: debug
+
+# Environment variables for local development
+env:
+  DATABASE_URL: ""  # Set via --set-string during helm install
+  PORT: "8004"
+  DAPR_HTTP_PORT: "3500"
+  DAPR_GRPC_PORT: "50001"
+  LOG_LEVEL: "debug"
+
+# ConfigMap for application configuration
+configMap:
+  enabled: true
+  data:
+    APP_NAME: "audit-service"
+    ENVIRONMENT: "local"
+    DAPR_PUBSUB_NAME: "pubsub"
+
+# Resource limits for local development (reduced)
+resources:
+  limits:
+    cpu: 300m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 128Mi
+
+# Security context
+securityContext:
+  fsGroup: 1000
+
+# Pod annotations (Dapr sidecar injection)
+podAnnotations:
+  dapr.io/enabled: "true"
+  dapr.io/app-id: "audit-service"
+  dapr.io/app-port: "8004"
+  dapr.io/app-protocol: "http"
+  dapr.io/enable-metrics: "true"
+  dapr.io/metrics-port: "9090"
+  dapr.io/log-level: "debug"
