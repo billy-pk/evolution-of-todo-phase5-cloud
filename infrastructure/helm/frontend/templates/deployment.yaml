@@ -45,8 +45,8 @@ spec:
         - name: BETTER_AUTH_SECRET
           valueFrom:
             secretKeyRef:
-              name: {{ include "frontend.fullname" . }}-secrets
-              key: better-auth-secret
+              name: better-auth-secret
+              key: secret
         - name: BETTER_AUTH_URL
           value: {{ .Values.env.BETTER_AUTH_URL | quote }}
 
@@ -54,8 +54,8 @@ spec:
         - name: DATABASE_URL
           valueFrom:
             secretKeyRef:
-              name: {{ include "frontend.fullname" . }}-secrets
-              key: database-url
+              name: postgres-credentials
+              key: connectionString
 
         # Load configuration from ConfigMap
         envFrom:

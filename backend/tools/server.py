@@ -949,8 +949,9 @@ def update_task(
                             id=uuid4(),
                             pattern=recurrence_pattern,
                             interval=recurrence_interval,
-                                                rule_metadata=metadata
-                                            )                        _session.add(recurrence_rule)
+                            rule_metadata=metadata
+                        )
+                        _session.add(recurrence_rule)
                         _session.flush()
                         task.recurrence_id = recurrence_rule.id
 
@@ -1042,8 +1043,9 @@ def update_task(
                                 id=uuid4(),
                                 pattern=recurrence_pattern,
                                 interval=recurrence_interval,
-                                                    rule_metadata=metadata
-                                                )                            session.add(recurrence_rule)
+                                rule_metadata=metadata
+                            )
+                            session.add(recurrence_rule)
                             session.flush()
                             task.recurrence_id = recurrence_rule.id
 
