@@ -509,16 +509,34 @@ def add_task(
         }
 
 
-def list_tasks(user_id: str, status: str = "all", _session: Session = None) -> dict:
-    """List tasks for a user, optionally filtered by completion status.
+def list_tasks(
+    user_id: str,
+    status: str = "all",
+    priority: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    due_date_from: Optional[str] = None,
+    due_date_to: Optional[str] = None,
+    search_query: Optional[str] = None,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
+    _session: Session = None
+) -> dict:
+    """List tasks for a user with optional filtering, searching, and sorting.
 
     Args:
         user_id: User ID from JWT token (1-255 characters)
         status: Filter by status - "all", "pending", or "completed" (default: "all")
+        priority: Filter by priority - "low", "normal", "high", "critical" (optional)
+        tags: Filter by tags - tasks containing ANY of these tags (optional)
+        due_date_from: Filter tasks with due_date >= this ISO8601 datetime (optional)
+        due_date_to: Filter tasks with due_date <= this ISO8601 datetime (optional)
+        search_query: Text search in title and description (case-insensitive) (optional)
+        sort_by: Field to sort by - "created_at", "due_date", "priority", "title" (default: "created_at")
+        sort_order: Sort order - "asc" or "desc" (default: "desc")
         _session: Optional database session (for testing)
 
     Returns:
-        Dict with status and list of tasks
+        Dict with status and list of tasks including priority, tags, due_date, updated_at
     """
     # Validate input parameters
     if not user_id or len(user_id) > 255:
@@ -533,32 +551,114 @@ def list_tasks(user_id: str, status: str = "all", _session: Session = None) -> d
             "error": "Status must be 'all', 'pending', or 'completed'"
         }
 
+    valid_priorities = ["low", "normal", "high", "critical"]
+    if priority is not None and priority not in valid_priorities:
+        return {
+            "status": "error",
+            "error": f"Priority must be one of: {', '.join(valid_priorities)}"
+        }
+
+    valid_sort_fields = ["created_at", "due_date", "priority", "title"]
+    if sort_by not in valid_sort_fields:
+        return {
+            "status": "error",
+            "error": f"sort_by must be one of: {', '.join(valid_sort_fields)}"
+        }
+
+    if sort_order not in ["asc", "desc"]:
+        return {
+            "status": "error",
+            "error": "sort_order must be 'asc' or 'desc'"
+        }
+
+    # Parse date filters
+    parsed_due_date_from = None
+    parsed_due_date_to = None
+    if due_date_from:
+        try:
+            parsed_due_date_from = datetime.fromisoformat(due_date_from.replace('Z', '+00:00'))
+        except ValueError:
+            return {
+                "status": "error",
+                "error": "due_date_from must be a valid ISO8601 datetime"
+            }
+    if due_date_to:
+        try:
+            parsed_due_date_to = datetime.fromisoformat(due_date_to.replace('Z', '+00:00'))
+        except ValueError:
+            return {
+                "status": "error",
+                "error": "due_date_to must be a valid ISO8601 datetime"
+            }
+
+    def build_query(statement):
+        """Apply filters and sorting to the query statement."""
+        # Apply status filter
+        if status == "pending":
+            statement = statement.where(Task.completed == False)
+        elif status == "completed":
+            statement = statement.where(Task.completed == True)
+
+        # Apply priority filter
+        if priority is not None:
+            statement = statement.where(Task.priority == priority)
+
+        # Apply tags filter (tasks containing ANY of these tags)
+        if tags:
+            statement = statement.where(Task.tags.overlap(tags))
+
+        # Apply due_date range filters
+        if parsed_due_date_from:
+            statement = statement.where(Task.due_date >= parsed_due_date_from)
+        if parsed_due_date_to:
+            statement = statement.where(Task.due_date <= parsed_due_date_to)
+
+        # Apply search query (case-insensitive in title or description)
+        if search_query:
+            search_pattern = f"%{search_query}%"
+            from sqlalchemy import or_
+            statement = statement.where(
+                or_(
+                    Task.title.ilike(search_pattern),
+                    Task.description.ilike(search_pattern)
+                )
+            )
+
+        # Apply sorting
+        sort_column = getattr(Task, sort_by, Task.created_at)
+        if sort_order == "desc":
+            statement = statement.order_by(sort_column.desc())
+        else:
+            statement = statement.order_by(sort_column.asc())
+
+        return statement
+
+    def format_task(task):
+        """Format a task for the response."""
+        return {
+            "task_id": str(task.id),
+            "title": task.title,
+            "description": task.description,
+            "completed": task.completed,
+            "priority": task.priority,
+            "tags": task.tags,
+            "due_date": task.due_date.isoformat() if task.due_date else None,
+            "created_at": task.created_at.isoformat(),
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None
+        }
+
     try:
         # Use provided session or create new one
         if _session:
             # Build query
             statement = select(Task).where(Task.user_id == user_id)
-
-            # Apply status filter
-            if status == "pending":
-                statement = statement.where(Task.completed == False)
-            elif status == "completed":
-                statement = statement.where(Task.completed == True)
+            statement = build_query(statement)
 
             # Execute query
             tasks = _session.exec(statement).all()
 
             # Format response
-            tasks_data = [
-                {
-                    "task_id": str(task.id),
-                    "title": task.title,
-                    "description": task.description,
-                    "completed": task.completed,
-                    "created_at": task.created_at.isoformat()
-                }
-                for task in tasks
-            ]
+            tasks_data = [format_task(task) for task in tasks]
 
             return {
                 "status": "success",
@@ -570,27 +670,13 @@ def list_tasks(user_id: str, status: str = "all", _session: Session = None) -> d
             with Session(engine) as session:
                 # Build query
                 statement = select(Task).where(Task.user_id == user_id)
-
-                # Apply status filter
-                if status == "pending":
-                    statement = statement.where(Task.completed == False)
-                elif status == "completed":
-                    statement = statement.where(Task.completed == True)
+                statement = build_query(statement)
 
                 # Execute query
                 tasks = session.exec(statement).all()
 
                 # Format response
-                tasks_data = [
-                    {
-                        "task_id": str(task.id),
-                        "title": task.title,
-                        "description": task.description,
-                        "completed": task.completed,
-                        "created_at": task.created_at.isoformat()
-                    }
-                    for task in tasks
-                ]
+                tasks_data = [format_task(task) for task in tasks]
 
                 return {
                     "status": "success",
@@ -659,17 +745,67 @@ def add_task_tool(
 
 
 @mcp.tool()
-def list_tasks_tool(user_id: str, status: str = "all") -> dict:
-    """MCP tool wrapper for list_tasks. List user's tasks with optional status filter.
+def list_tasks_tool(
+    user_id: str,
+    status: str = "all",
+    priority: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    due_date_from: Optional[str] = None,
+    due_date_to: Optional[str] = None,
+    search_query: Optional[str] = None,
+    sort_by: str = "created_at",
+    sort_order: str = "desc"
+) -> dict:
+    """MCP tool wrapper for list_tasks. List user's tasks with filtering, searching, and sorting.
 
     Args:
         user_id: User ID from JWT token (1-255 characters)
         status: Filter by status - "all", "pending", or "completed" (default: "all")
+        priority: Filter by priority - "low", "normal", "high", or "critical" (optional)
+        tags: Filter by tags - tasks containing ANY of these tags (optional)
+        due_date_from: Filter tasks with due_date >= this ISO8601 datetime (optional)
+        due_date_to: Filter tasks with due_date <= this ISO8601 datetime (optional)
+        search_query: Text search in title and description (case-insensitive) (optional)
+        sort_by: Field to sort by - "created_at", "due_date", "priority", "title" (default: "created_at")
+        sort_order: Sort order - "asc" or "desc" (default: "desc")
 
     Returns:
-        Dict with status and list of tasks
+        Dict with status and list of tasks including priority, tags, due_date, updated_at
+
+    Example:
+        # List high priority tasks due this week
+        list_tasks_tool(
+            user_id="user-123",
+            priority="high",
+            due_date_from="2026-01-13T00:00:00Z",
+            due_date_to="2026-01-19T23:59:59Z",
+            sort_by="due_date",
+            sort_order="asc"
+        )
+
+        # Search for tasks with "report" in title
+        list_tasks_tool(
+            user_id="user-123",
+            search_query="report"
+        )
+
+        # List tasks tagged with "work" or "urgent"
+        list_tasks_tool(
+            user_id="user-123",
+            tags=["work", "urgent"]
+        )
     """
-    return list_tasks(user_id, status)
+    return list_tasks(
+        user_id=user_id,
+        status=status,
+        priority=priority,
+        tags=tags,
+        due_date_from=due_date_from,
+        due_date_to=due_date_to,
+        search_query=search_query,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )
 
 
 def complete_task(user_id: str, task_id: str, _session: Session = None) -> dict:
