@@ -229,12 +229,12 @@ This project uses a monorepo structure:
 
 **Purpose**: Log all task operations to audit_log table for compliance and debugging
 
-- [ ] T088 Create Audit Service main file in services/audit-service/audit_service.py
-- [ ] T089 Implement Dapr Pub/Sub subscription to task-events topic in services/audit-service/audit_service.py
-- [ ] T090 Implement event handler for all event types in services/audit-service/audit_service.py (task.created, task.updated, task.completed, task.deleted, include recurrence_id in deletion events for recurring task tracking)
-- [ ] T091 Write audit log entries to audit_log table in services/audit-service/audit_service.py
-- [ ] T092 Add error handling for audit failures in services/audit-service/audit_service.py (log but don't block main flow)
-- [ ] T093 Create integration test for audit logging in backend/tests/integration/test_audit_logging.py
+- [X] T088 Create Audit Service main file in services/audit-service/audit_service.py
+- [X] T089 Implement Dapr Pub/Sub subscription to task-events topic in services/audit-service/audit_service.py
+- [X] T090 Implement event handler for all event types in services/audit-service/audit_service.py (task.created, task.updated, task.completed, task.deleted, include recurrence_id in deletion events for recurring task tracking)
+- [X] T091 Write audit log entries to audit_log table in services/audit-service/audit_service.py
+- [X] T092 Add error handling for audit failures in services/audit-service/audit_service.py (log but don't block main flow)
+- [X] T093 Create integration test for audit logging in backend/tests/integration/test_audit_logging.py
 
 ---
 
@@ -242,17 +242,17 @@ This project uses a monorepo structure:
 
 **Purpose**: Enable real-time task updates across multiple browser tabs/devices
 
-- [ ] T094 Create WebSocket Service main file in services/websocket-service/websocket_service.py
-- [ ] T095 Implement WebSocket connection manager in services/websocket-service/websocket_service.py (user_id → connections mapping)
-- [ ] T096 Implement WebSocket endpoint /ws/{user_id} in services/websocket-service/websocket_service.py
-- [ ] T097 Add JWT authentication for WebSocket connections in services/websocket-service/websocket_service.py
-- [ ] T098 Implement Dapr Pub/Sub subscription to task-updates topic in services/websocket-service/websocket_service.py
-- [ ] T099 Implement broadcast logic in services/websocket-service/websocket_service.py (user-isolated broadcasting)
-- [ ] T100 Add connection lifecycle management in services/websocket-service/websocket_service.py (connect, disconnect, reconnect)
-- [ ] T101 [P] Create WebSocket client component in frontend/components/LiveTaskUpdates.tsx
-- [ ] T102 [P] Create WebSocket connection manager in frontend/lib/websocket.ts (auto-reconnect with exponential backoff)
-- [ ] T103 Integrate WebSocket updates in frontend/app/(dashboard)/chat/page.tsx
-- [ ] T104 Create integration test for WebSocket broadcasting in backend/tests/integration/test_websocket_updates.py
+- [X] T094 Create WebSocket Service main file in services/websocket-service/websocket_service.py
+- [X] T095 Implement WebSocket connection manager in services/websocket-service/websocket_service.py (user_id → connections mapping)
+- [X] T096 Implement WebSocket endpoint /ws/{user_id} in services/websocket-service/websocket_service.py
+- [X] T097 Add JWT authentication for WebSocket connections in services/websocket-service/websocket_service.py
+- [X] T098 Implement Dapr Pub/Sub subscription to task-updates topic in services/websocket-service/websocket_service.py
+- [X] T099 Implement broadcast logic in services/websocket-service/websocket_service.py (user-isolated broadcasting)
+- [X] T100 Add connection lifecycle management in services/websocket-service/websocket_service.py (connect, disconnect, reconnect)
+- [X] T101 [P] Create WebSocket client component in frontend/components/LiveTaskUpdates.tsx
+- [X] T102 [P] Create WebSocket connection manager in frontend/lib/websocket.ts (auto-reconnect with exponential backoff)
+- [X] T103 Integrate WebSocket updates in frontend/app/(dashboard)/chat/page.tsx
+- [X] T104 Create integration test for WebSocket broadcasting in backend/tests/integration/test_websocket_updates.py
 
 ---
 
