@@ -76,12 +76,12 @@ resources:
 autoscaling:
   enabled: false
 
-# Pod annotations (Dapr disabled for testing without Dapr)
+# Pod annotations (Dapr enabled for event-driven architecture)
 podAnnotations:
-  dapr.io/enabled: "false"
+  dapr.io/enabled: "true"
+  dapr.io/app-id: "backend-api"
+  dapr.io/app-port: "8000"
+  dapr.io/app-protocol: "http"
 
-# Security context (relaxed for local development)
-securityContext:
-  runAsNonRoot: false  # Allow root for local debugging
-  runAsUser: 0
-  fsGroup: 0
+# Security context (empty for local development - allows Dapr sidecar to run)
+securityContext: {}
