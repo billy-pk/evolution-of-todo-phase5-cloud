@@ -249,6 +249,10 @@ build_images() {
   docker build -t websocket-service:latest ./services/websocket-service
   print_success "websocket-service image built"
 
+  print_step "Building mcp-server image..."
+  docker build -t mcp-server:latest -f ./backend/tools/Dockerfile ./backend
+  print_success "mcp-server image built"
+
   print_success "All Docker images built"
 }
 
@@ -260,6 +264,14 @@ deploy_services() {
   DATABASE_URL=$(kubectl get secret postgres-credentials -o jsonpath='{.data.connectionString}' | base64 -d)
   OPENAI_API_KEY=$(kubectl get secret openai-credentials -o jsonpath='{.data.apiKey}' | base64 -d)
   BETTER_AUTH_SECRET=$(kubectl get secret better-auth-secret -o jsonpath='{.data.secret}' | base64 -d)
+
+  # Deploy MCP Server (internal ClusterIP service - must be deployed before backend-api)
+  print_step "Deploying mcp-server..."
+  helm upgrade --install mcp-server ./infrastructure/helm/mcp-server/ \
+    -f ./infrastructure/helm/mcp-server/values-local.yaml \
+    --timeout $HELM_TIMEOUT \
+    --wait
+  print_success "mcp-server deployed"
 
   # Deploy Backend API
   print_step "Deploying backend-api..."
