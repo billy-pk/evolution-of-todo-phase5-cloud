@@ -10,10 +10,9 @@ image:
 
 # Service configuration for local development
 service:
-  type: NodePort
+  type: ClusterIP  # Use port-forwarding in WSL (NodePort doesn't work well)
   port: 8000
   targetPort: 8000
-  nodePort: 30081  # Fixed NodePort for easy local access (http://localhost:30081)
 
 # Dapr configuration for local development
 dapr:

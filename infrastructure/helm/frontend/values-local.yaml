@@ -10,10 +10,9 @@ image:
 
 # Service configuration for local development
 service:
-  type: NodePort
+  type: ClusterIP  # Use port-forwarding in WSL (NodePort doesn't work well)
   port: 3000
   targetPort: 3000
-  nodePort: 30080  # Fixed NodePort for easy local access (http://localhost:30080)
 
 # Environment variables for local development
 env:
