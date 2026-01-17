@@ -145,7 +145,7 @@ async def handle_reminder_event(request: Request):
 
         if not reminder_id:
             logger.warning("Reminder event missing reminder_id, skipping")
-            return {"status": "error", "message": "Missing reminder_id"}
+            return {"status": "DROP", "message": "Missing reminder_id"}
 
         # Process reminder delivery
         result = await process_reminder_delivery(reminder_id=reminder_id)
@@ -153,7 +153,7 @@ async def handle_reminder_event(request: Request):
 
     except Exception as e:
         logger.error(f"Error handling reminder event: {str(e)}", exc_info=True)
-        return {"status": "error", "message": str(e)}
+        return {"status": "DROP", "message": str(e)}
 
 
 @app.post("/api/jobs/reminder")
@@ -180,7 +180,7 @@ async def handle_reminder_job(request: Request):
         reminder_id = job_data.get("reminder_id")
         if not reminder_id:
             logger.warning("Reminder job missing reminder_id, skipping")
-            return {"status": "error", "message": "Missing reminder_id"}
+            return {"status": "DROP", "message": "Missing reminder_id"}
 
         # Process reminder delivery
         result = await process_reminder_delivery(reminder_id=reminder_id)
@@ -188,7 +188,7 @@ async def handle_reminder_job(request: Request):
 
     except Exception as e:
         logger.error(f"Error handling reminder job: {str(e)}", exc_info=True)
-        return {"status": "error", "message": str(e)}
+        return {"status": "DROP", "message": str(e)}
 
 
 async def process_reminder_delivery(reminder_id: str) -> Dict[str, Any]:
@@ -218,12 +218,12 @@ async def process_reminder_delivery(reminder_id: str) -> Dict[str, Any]:
 
             if not reminder:
                 logger.warning(f"Reminder {reminder_id} not found, skipping")
-                return {"status": "error", "message": "Reminder not found"}
+                return {"status": "DROP", "message": "Reminder not found"}
 
             # Idempotency check: Skip if already sent
             if reminder.status == "sent":
                 logger.info(f"Reminder {reminder_id} already sent, skipping (idempotency check)")
-                return {"status": "success", "message": "Reminder already sent (idempotent)"}
+                return {"status": "SUCCESS", "message": "Reminder already sent (idempotent)"}
 
             # Load associated Task for idempotency check
             statement = select(Task).where(Task.id == reminder.task_id)
@@ -234,7 +234,7 @@ async def process_reminder_delivery(reminder_id: str) -> Dict[str, Any]:
                 # Update reminder status to failed (task deleted)
                 reminder.status = "failed"
                 session.commit()
-                return {"status": "error", "message": "Task not found (deleted)"}
+                return {"status": "DROP", "message": "Task not found (deleted)"}
 
             # Idempotency check: Skip if task completed
             if task.completed:
@@ -243,7 +243,7 @@ async def process_reminder_delivery(reminder_id: str) -> Dict[str, Any]:
                 reminder.status = "sent"
                 reminder.sent_at = datetime.now(UTC)
                 session.commit()
-                return {"status": "success", "message": "Task already completed, reminder skipped"}
+                return {"status": "SUCCESS", "message": "Task already completed, reminder skipped"}
 
             # Deliver notification with retry logic
             delivery_success = await deliver_notification_with_retry(
@@ -261,7 +261,7 @@ async def process_reminder_delivery(reminder_id: str) -> Dict[str, Any]:
 
                 logger.info(f"✓ Reminder {reminder_id} delivered successfully")
                 return {
-                    "status": "success",
+                    "status": "SUCCESS",
                     "message": f"Reminder delivered successfully",
                     "reminder_id": str(reminder.id),
                     "task_id": str(reminder.task_id),
@@ -274,7 +274,7 @@ async def process_reminder_delivery(reminder_id: str) -> Dict[str, Any]:
 
                 logger.error(f"✗ Reminder {reminder_id} delivery failed after retries")
                 return {
-                    "status": "error",
+                    "status": "DROP",  # Don't retry indefinitely via Dapr if internal retries failed
                     "message": "Reminder delivery failed after retries",
                     "reminder_id": str(reminder.id)
                 }
@@ -282,7 +282,7 @@ async def process_reminder_delivery(reminder_id: str) -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"Error processing reminder delivery: {str(e)}", exc_info=True)
             session.rollback()
-            return {"status": "error", "message": str(e)}
+            return {"status": "RETRY", "message": str(e)}
 
 
 async def deliver_notification_with_retry(

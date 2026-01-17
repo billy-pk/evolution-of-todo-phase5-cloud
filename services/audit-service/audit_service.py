@@ -189,20 +189,20 @@ async def handle_task_event(request: Request):
 
         event_type = event_data.get("event_type")
         event_id = event_data.get("event_id")
-        task_id = event_data.get("task_id")
-        user_id = event_data.get("user_id")
         task_data = event_data.get("task_data", {})
+        task_id = event_data.get("task_id") or task_data.get("id")
+        user_id = event_data.get("user_id")
         timestamp_str = event_data.get("timestamp")
         schema_version = event_data.get("schema_version", "1.0.0")
 
         # Validate required fields
         if not event_type:
             request_logger.warning("Event missing event_type, skipping audit log")
-            return Response(status_code=200)
+            return {"status": "DROP", "message": "Missing event_type"}
 
         if not user_id:
             request_logger.warning(f"Event {event_type} missing user_id, skipping audit log")
-            return Response(status_code=200)
+            return {"status": "DROP", "message": "Missing user_id"}
 
         request_logger.info(
             f"Processing event: {event_type} | "
@@ -233,17 +233,17 @@ async def handle_task_event(request: Request):
         else:
             request_logger.error(f"✗ Failed to create audit log entry for {event_type}")
 
-        # Return 200 to acknowledge receipt regardless of success/failure
+        # Return SUCCESS to acknowledge receipt regardless of success/failure
         # Audit logging should not block main flow
-        return Response(status_code=200)
+        return {"status": "SUCCESS"}
 
     except json.JSONDecodeError as e:
         request_logger.error(f"✗ Invalid JSON in event payload: {str(e)}")
-        return Response(status_code=200)
+        return {"status": "DROP", "message": "Invalid JSON"}
     except Exception as e:
         request_logger.error(f"✗ Unexpected error processing event: {str(e)}", exc_info=True)
-        # Return 200 to prevent Dapr retries - audit logging is non-critical
-        return Response(status_code=200)
+        # Return DROP to prevent Dapr retries - audit logging is non-critical
+        return {"status": "DROP", "message": str(e)}
 
 
 def create_audit_details(
