@@ -16,9 +16,9 @@ service:
   port: 8001
   targetPort: 8001
 
-# Dapr sidecar configuration (disabled for testing without Dapr)
+# Dapr sidecar configuration (enabled for event publishing)
 dapr:
-  enabled: false
+  enabled: true
   appId: mcp-server
   appPort: 8001
   appProtocol: http

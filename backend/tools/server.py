@@ -33,6 +33,9 @@ from services.recurrence_service import RecurrenceService
 from services.reminder_service import ReminderService
 from dapr.clients import DaprClient
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # Configure transport security for production deployment
@@ -140,6 +143,83 @@ def schedule_reminder_job(
     except Exception as e:
         # Log error but don't fail task creation - reminder in DB can be rescheduled
         print(f"Warning: Failed to schedule reminder job via Dapr: {str(e)}")
+        return False
+
+
+def publish_task_event(
+    event_type: str,
+    task_data: dict,
+    user_id: str,
+    previous_data: dict = None,
+    source: str = "mcp_tool"
+) -> bool:
+    """
+    Publish task lifecycle event via Dapr Pub/Sub.
+
+    Args:
+        event_type: task.created, task.updated, task.completed, task.deleted
+        task_data: Full task data dictionary
+        user_id: User ID for isolation
+        previous_data: Previous state (for updates)
+        source: Event source identifier
+
+    Returns:
+        bool: True if published successfully, False otherwise
+    """
+    try:
+        with DaprClient() as dapr:
+            event_id = str(uuid4())
+            correlation_id = str(uuid4())
+
+            event_payload = {
+                "event_id": event_id,
+                "event_type": event_type,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "user_id": user_id,
+                "task_id": task_data.get("task_id"),
+                "task_data": task_data,
+                "previous_data": previous_data,
+                "schema_version": "1.0.0",
+                "metadata": {
+                    "source": source,
+                    "correlation_id": correlation_id
+                }
+            }
+
+            # Publish to task-events topic for audit service
+            dapr.publish_event(
+                pubsub_name="pubsub",
+                topic_name="task-events",
+                data=json.dumps(event_payload),
+                data_content_type="application/json"
+            )
+
+            logger.info(f"Published {event_type} event: {event_id} for task {task_data.get('task_id')} (user: {user_id})")
+
+            # Also publish to task-updates topic for WebSocket service
+            update_payload = {
+                "update_type": event_type.replace(".", "_"),
+                "event_id": event_id,
+                "task_id": task_data.get("task_id"),
+                "user_id": user_id,
+                "task_data": task_data,
+                "source": source,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "schema_version": "1.0.0"
+            }
+
+            dapr.publish_event(
+                pubsub_name="pubsub",
+                topic_name="task-updates",
+                data=json.dumps(update_payload),
+                data_content_type="application/json"
+            )
+
+            return True
+
+    except Exception as e:
+        logger.error(f"Failed to publish {event_type} event: {e}")
+        # Non-blocking: task was created successfully, event publishing failed
         return False
 
 
@@ -370,23 +450,29 @@ def add_task(
                 _session.commit()
                 _session.refresh(task)
 
+            # Build task data for response and event
+            task_data = {
+                "task_id": str(task.id),
+                "title": task.title,
+                "description": task.description,
+                "completed": task.completed,
+                "priority": task.priority,
+                "tags": task.tags,
+                "due_date": task.due_date.isoformat() if task.due_date else None,
+                "reminder_offset": reminder_offset,
+                "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
+                "recurrence_pattern": recurrence_pattern,
+                "recurrence_interval": recurrence_interval,
+                "created_at": task.created_at.isoformat()
+            }
+
+            # Publish task.created event (non-blocking)
+            publish_task_event("task.created", task_data, user_id)
+
             # Return success response
             return {
                 "status": "success",
-                "data": {
-                    "task_id": str(task.id),
-                    "title": task.title,
-                    "description": task.description,
-                    "completed": task.completed,
-                    "priority": task.priority,
-                    "tags": task.tags,
-                    "due_date": task.due_date.isoformat() if task.due_date else None,
-                    "reminder_offset": reminder_offset,
-                    "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
-                    "recurrence_pattern": recurrence_pattern,
-                    "recurrence_interval": recurrence_interval,
-                    "created_at": task.created_at.isoformat()
-                }
+                "data": task_data
             }
         else:
             with Session(engine) as session:
@@ -479,23 +565,29 @@ def add_task(
                     session.commit()
                     session.refresh(task)
 
+                # Build task data for response and event
+                task_data = {
+                    "task_id": str(task.id),
+                    "title": task.title,
+                    "description": task.description,
+                    "completed": task.completed,
+                    "priority": task.priority,
+                    "tags": task.tags,
+                    "due_date": task.due_date.isoformat() if task.due_date else None,
+                    "reminder_offset": reminder_offset,
+                    "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
+                    "recurrence_pattern": recurrence_pattern,
+                    "recurrence_interval": recurrence_interval,
+                    "created_at": task.created_at.isoformat()
+                }
+
+                # Publish task.created event (non-blocking)
+                publish_task_event("task.created", task_data, user_id)
+
                 # Return success response
                 return {
                     "status": "success",
-                    "data": {
-                        "task_id": str(task.id),
-                        "title": task.title,
-                        "description": task.description,
-                        "completed": task.completed,
-                        "priority": task.priority,
-                        "tags": task.tags,
-                        "due_date": task.due_date.isoformat() if task.due_date else None,
-                        "reminder_offset": reminder_offset,
-                        "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
-                        "recurrence_pattern": recurrence_pattern,
-                        "recurrence_interval": recurrence_interval,
-                        "created_at": task.created_at.isoformat()
-                    }
+                    "data": task_data
                 }
     except ValidationError as e:
         return {
@@ -861,15 +953,17 @@ def complete_task(user_id: str, task_id: str, _session: Session = None) -> dict:
             _session.commit()
             _session.refresh(task)
 
-            return {
-                "status": "success",
-                "data": {
-                    "task_id": str(task.id),
-                    "title": task.title,
-                    "completed": task.completed,
-                    "updated_at": task.updated_at.isoformat()
-                }
+            task_data = {
+                "task_id": str(task.id),
+                "title": task.title,
+                "completed": task.completed,
+                "updated_at": task.updated_at.isoformat()
             }
+
+            # Publish task.completed event
+            publish_task_event("task.completed", task_data, user_id, {"completed": False})
+
+            return {"status": "success", "data": task_data}
         else:
             with Session(engine) as session:
                 # Find task
@@ -896,15 +990,17 @@ def complete_task(user_id: str, task_id: str, _session: Session = None) -> dict:
                 session.commit()
                 session.refresh(task)
 
-                return {
-                    "status": "success",
-                    "data": {
-                        "task_id": str(task.id),
-                        "title": task.title,
-                        "completed": task.completed,
-                        "updated_at": task.updated_at.isoformat()
-                    }
+                task_data = {
+                    "task_id": str(task.id),
+                    "title": task.title,
+                    "completed": task.completed,
+                    "updated_at": task.updated_at.isoformat()
                 }
+
+                # Publish task.completed event
+                publish_task_event("task.completed", task_data, user_id, {"completed": False})
+
+                return {"status": "success", "data": task_data}
     except Exception as e:
         return {
             "status": "error",
@@ -1281,17 +1377,21 @@ def delete_task(user_id: str, task_id: str, _session: Session = None) -> dict:
                     "error": "Unauthorized: Task does not belong to user"
                 }
 
+            # Capture task data before deletion for event
+            task_data = {
+                "task_id": str(task.id),
+                "title": task.title,
+                "deleted": True
+            }
+
             # Delete task
             _session.delete(task)
             _session.commit()
 
-            return {
-                "status": "success",
-                "data": {
-                    "task_id": str(task_uuid),
-                    "deleted": True
-                }
-            }
+            # Publish task.deleted event
+            publish_task_event("task.deleted", task_data, user_id)
+
+            return {"status": "success", "data": task_data}
         else:
             with Session(engine) as session:
                 # Find task
@@ -1311,17 +1411,21 @@ def delete_task(user_id: str, task_id: str, _session: Session = None) -> dict:
                         "error": "Unauthorized: Task does not belong to user"
                     }
 
+                # Capture task data before deletion for event
+                task_data = {
+                    "task_id": str(task.id),
+                    "title": task.title,
+                    "deleted": True
+                }
+
                 # Delete task
                 session.delete(task)
                 session.commit()
 
-                return {
-                    "status": "success",
-                    "data": {
-                        "task_id": str(task_uuid),
-                        "deleted": True
-                    }
-                }
+                # Publish task.deleted event
+                publish_task_event("task.deleted", task_data, user_id)
+
+                return {"status": "success", "data": task_data}
     except Exception as e:
         return {
             "status": "error",

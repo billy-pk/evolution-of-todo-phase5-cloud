@@ -56,10 +56,3 @@ class AuditLog(SQLModel, table=True):
         index=True,
         description="Event timestamp (UTC) - immutable"
     )
-
-    correlation_id: Optional[str] = Field(
-        default=None,
-        max_length=255,
-        index=True,
-        description="Correlation ID for distributed tracing"
-    )
