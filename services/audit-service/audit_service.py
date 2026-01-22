@@ -315,16 +315,19 @@ def write_audit_log(
     logger: logging.LoggerAdapter
 ) -> bool:
     """
-    Write an entry to the audit_log table.
+    Write an entry to the audit_log table with idempotency protection.
 
     Uses SQLModel AuditLog model for type safety.
     Returns True on success, False on failure.
+
+    Idempotency: Checks event_id to prevent duplicate audit entries from
+    at-least-once delivery semantics of Dapr Pub/Sub.
 
     Args:
         event_type: Type of event
         user_id: User ID for isolation
         task_id: Task ID (nullable for non-task events)
-        details: JSON details payload
+        details: JSON details payload (must contain event_id)
         logger: Logger with correlation ID
 
     Returns:
@@ -336,6 +339,26 @@ def write_audit_log(
 
     try:
         with Session(engine) as session:
+            # Idempotency check: Skip if event_id already processed
+            event_id = details.get("event_id")
+            if event_id:
+                # Query for existing audit log with same event_id
+                # Use JSONB text extraction operator (->>)
+                from sqlalchemy import text
+                existing = session.exec(
+                    select(AuditLog).where(
+                        text("details->>'event_id' = :event_id")
+                    ).params(event_id=event_id)
+                ).first()
+
+                if existing:
+                    logger.info(
+                        f"⚠️ DUPLICATE EVENT DETECTED - Idempotent skip | "
+                        f"event_id: {event_id} | event_type: {event_type} | "
+                        f"Original logged at: {existing.timestamp}"
+                    )
+                    return True  # Success - idempotent behavior
+
             # Create AuditLog entry using SQLModel
             audit_entry = AuditLog(
                 id=uuid4(),

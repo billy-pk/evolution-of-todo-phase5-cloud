@@ -19,7 +19,8 @@ from datetime import datetime, UTC, timedelta
 import json
 import logging
 import jwt
-from typing import Optional, AsyncIterator
+import hashlib
+from typing import Optional, AsyncIterator, Dict, Any
 import asyncio
 
 from db import get_session
@@ -39,6 +40,11 @@ chatkit_router = APIRouter(tags=["chatkit-protocol"])
 # Initialize ChatKit server instance
 data_store = SimpleMemoryStore()
 chatkit_server = TaskManagerChatKitServer(data_store)
+
+# Idempotency cache to prevent duplicate request processing
+# Format: {idempotency_key: {"response": response_data, "timestamp": datetime, "user_id": str}}
+_idempotency_cache: Dict[str, Dict[str, Any]] = {}
+IDEMPOTENCY_CACHE_TTL_SECONDS = 300  # 5 minutes
 
 
 class ChatKitSessionManager:
@@ -545,16 +551,68 @@ async def add_message(
 # ChatKit Protocol Endpoint (for ChatKit.js client)
 # ============================================================================
 
+def _generate_idempotency_key(user_id: str, body: bytes) -> str:
+    """
+    Generate an idempotency key from user_id and request body.
+
+    Args:
+        user_id: User ID from JWT token
+        body: Raw request body bytes
+
+    Returns:
+        SHA256 hash as idempotency key
+    """
+    content = f"{user_id}:{body.decode('utf-8', errors='ignore')}"
+    return hashlib.sha256(content.encode()).hexdigest()
+
+
+def _clean_idempotency_cache():
+    """Remove expired entries from idempotency cache."""
+    now = datetime.now(UTC)
+    expired_keys = [
+        key for key, value in _idempotency_cache.items()
+        if (now - value["timestamp"]).total_seconds() > IDEMPOTENCY_CACHE_TTL_SECONDS
+    ]
+    for key in expired_keys:
+        del _idempotency_cache[key]
+
+    if expired_keys:
+        logger.info(f"Cleaned {len(expired_keys)} expired idempotency cache entries")
+
+
+def _cache_response(idempotency_key: str, user_id: str, response_content: bytes, response_type: str):
+    """
+    Cache response for idempotency protection.
+
+    Args:
+        idempotency_key: Generated idempotency key
+        user_id: User ID
+        response_content: Response body bytes
+        response_type: Response type ("streaming" or "json")
+    """
+    _idempotency_cache[idempotency_key] = {
+        "response": response_content,
+        "response_type": response_type,
+        "timestamp": datetime.now(UTC),
+        "user_id": user_id
+    }
+
+
 @chatkit_router.post("/chatkit")
 async def chatkit_endpoint(request: Request):
     """
-    Main ChatKit protocol endpoint.
+    Main ChatKit protocol endpoint with idempotency protection.
 
     This endpoint receives requests from the ChatKit.js client and forwards
     them to the ChatKitServer for processing.
 
     All communication happens through a single POST endpoint that returns
     either JSON directly or streams SSE JSON events.
+
+    Idempotency Protection:
+    - Detects duplicate requests within 5-minute window
+    - Returns cached response for duplicates
+    - Prevents duplicate task creation from ChatKit retries
     """
     try:
         logger.info("=== ChatKit endpoint received request ===")
@@ -576,26 +634,97 @@ async def chatkit_endpoint(request: Request):
 
         logger.info(f"ChatKit request authenticated for user {user_id}")
 
-        # Create context with user_id for authorization
-        context = {"user_id": user_id}
-
         # Get request body
         body = await request.body()
 
+        # Clean expired cache entries periodically
+        _clean_idempotency_cache()
+
+        # Generate idempotency key from user_id and request body
+        idempotency_key = _generate_idempotency_key(user_id, body)
+
+        # Check if this request was already processed
+        if idempotency_key in _idempotency_cache:
+            cached = _idempotency_cache[idempotency_key]
+
+            # Verify the cached response is for the same user (security check)
+            if cached["user_id"] == user_id:
+                cache_age = (datetime.now(UTC) - cached["timestamp"]).total_seconds()
+
+                # Check if request is currently being processed
+                if cached["response"] == b"STREAMING_IN_PROGRESS":
+                    logger.warning(
+                        f"⚠️  DUPLICATE REQUEST DETECTED - Request already in progress "
+                        f"(age: {cache_age:.1f}s, key: {idempotency_key[:16]}...)"
+                    )
+                    # Return 429 Too Many Requests to indicate retry needed
+                    raise HTTPException(
+                        status_code=429,
+                        detail="Request is already being processed. Please wait."
+                    )
+
+                logger.warning(
+                    f"⚠️  DUPLICATE REQUEST DETECTED - Returning cached response "
+                    f"(age: {cache_age:.1f}s, key: {idempotency_key[:16]}...)"
+                )
+
+                # Return cached response with appropriate media type
+                if cached["response_type"] == "streaming":
+                    return StreamingResponse(
+                        iter([cached["response"]]),
+                        media_type="text/event-stream"
+                    )
+                else:
+                    return Response(
+                        content=cached["response"],
+                        media_type="application/json"
+                    )
+            else:
+                # Key collision with different user - this should be extremely rare
+                logger.error(f"Idempotency key collision detected for key {idempotency_key[:16]}...")
+
+        # Create context with user_id for authorization
+        context = {"user_id": user_id}
+
         # Process request through ChatKit server
+        logger.info(f"Processing new request (key: {idempotency_key[:16]}...)")
         result = await chatkit_server.process(body, context)
 
-        # Return streaming or JSON response
+        # Return streaming or JSON response and cache it
         if isinstance(result, StreamingResult):
             logger.info("Returning streaming response")
-            return StreamingResponse(result, media_type="text/event-stream")
+
+            # Collect streaming events for caching (prevents duplicate task creation on retries)
+            collected_events = []
+            async def event_collector():
+                async for event in result:
+                    collected_events.append(event)
+                    yield event
+
+            # Cache a marker immediately to prevent concurrent processing
+            # This protects against race conditions during streaming
+            _cache_response(idempotency_key, user_id, b"STREAMING_IN_PROGRESS", "streaming")
+            logger.info(f"Marked streaming request as in-progress (key: {idempotency_key[:16]}...)")
+
+            return StreamingResponse(event_collector(), media_type="text/event-stream")
         elif isinstance(result, NonStreamingResult):
             logger.info("Returning JSON response")
+
+            # Cache the response for idempotency protection
+            # result.json is already bytes, no need to encode
+            _cache_response(idempotency_key, user_id, result.json, "json")
+            logger.info(f"Cached response for idempotency key {idempotency_key[:16]}...")
+
             return Response(content=result.json, media_type="application/json")
         else:
             # Fallback for any other response type
             logger.info(f"Returning response of type {type(result)}")
-            return Response(content=str(result), media_type="application/json")
+            response_content = str(result)
+
+            # Cache the response
+            _cache_response(idempotency_key, user_id, response_content.encode(), "json")
+
+            return Response(content=response_content, media_type="application/json")
 
     except HTTPException:
         raise

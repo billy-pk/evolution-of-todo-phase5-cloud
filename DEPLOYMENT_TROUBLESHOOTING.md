@@ -161,6 +161,94 @@ kubectl rollout restart deployment frontend backend-api
 
 ---
 
+### Issue 5: ChatKit Endpoint Crashing - Idempotency Type Handling Bug
+
+**Symptoms:**
+- ChatKit endpoint returns no response
+- Chat UI shows errors when sending messages
+- Backend logs show: `AttributeError: 'bytes' object has no attribute 'encode'`
+- Error occurs on line attempting to cache ChatKit response
+
+**Root Cause:**
+The idempotency implementation incorrectly tried to encode bytes that were already bytes. ChatKit's `NonStreamingResult.json` property is already of type `bytes`, but the code attempted to call `.encode()` on it.
+
+**Location:**
+`backend/routes/chatkit.py:690`
+
+**Buggy Code:**
+```python
+_cache_response(idempotency_key, user_id, result.json.encode(), "json")
+```
+
+**Fixed Code:**
+```python
+# result.json is already bytes, no need to encode
+_cache_response(idempotency_key, user_id, result.json, "json")
+```
+
+**Solution:**
+1. Apply the fix in `backend/routes/chatkit.py:690`
+2. Rebuild Docker image:
+   ```bash
+   cd backend
+   docker build -t backend-api:v3-idempotency-fixed .
+   ```
+
+3. Load to Minikube:
+   ```bash
+   minikube image load backend-api:v3-idempotency-fixed
+   ```
+
+4. Update deployment:
+   ```bash
+   kubectl set image deployment/backend-api backend-api=backend-api:v3-idempotency-fixed -n default
+   kubectl rollout status deployment/backend-api -n default
+   ```
+
+5. Verify fix:
+   ```bash
+   kubectl logs -n default -l app.kubernetes.io/name=backend-api -c backend-api --tail=20
+   ```
+
+**Verification:**
+- Send a chat message via frontend
+- Should receive AI response without errors
+- Tasks created via chat should appear in database (single entry)
+
+**Known Related Issue:**
+While this fix prevents duplicate task creation, **duplicate audit log entries** may still occur. This is because audit logs are published to Dapr pubsub, and the idempotency cache only protects the direct task creation, not the event publishing. The audit service may process duplicate events from ChatKit retries. This requires separate investigation and fixing at the event publishing or audit service level.
+
+---
+
+### Issue 6: Port-Forward Not Running for Backend API
+
+**Symptoms:**
+- Browser console shows: `ERR_CONNECTION_REFUSED` when accessing ChatKit
+- Frontend can connect but backend API requests fail
+- ChatKit shows: `POST http://localhost:8000/chatkit net::ERR_CONNECTION_REFUSED`
+
+**Root Cause:**
+Port-forward for backend-api service on port 8000 is not active.
+
+**Solution:**
+```bash
+# Check if port-forward is running
+ps aux | grep "port-forward" | grep backend
+
+# If not running, start it
+kubectl port-forward --address 0.0.0.0 svc/backend-api 8000:8000 > /tmp/backend-port-forward.log 2>&1 &
+
+# Verify it's accessible
+curl http://localhost:8000/health
+```
+
+**Expected Response:**
+```json
+{"status":"healthy","environment":"local","database":"connected"}
+```
+
+---
+
 ## Minikube Debug Commands
 
 ```bash
