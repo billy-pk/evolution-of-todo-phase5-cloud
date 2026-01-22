@@ -89,6 +89,26 @@ mcp = FastMCP(
     transport_security=transport_security,
 )
 
+# ============================================================================
+# Idempotency Protection for Tool Calls
+# ============================================================================
+# Protects against duplicate tool invocations from OpenAI Agents SDK
+# The SDK sometimes calls MCP tools multiple times for a single user request
+
+_task_creation_cache = {}  # {(user_id, title_lower): (task_data, timestamp)}
+TASK_CACHE_TTL_SECONDS = 60  # 1 minute cache window
+
+
+def _clean_task_cache():
+    """Remove expired entries from task creation cache."""
+    now = datetime.now(UTC)
+    expired_keys = [
+        key for key, (_, timestamp) in _task_creation_cache.items()
+        if (now - timestamp).total_seconds() > TASK_CACHE_TTL_SECONDS
+    ]
+    for key in expired_keys:
+        del _task_creation_cache[key]
+
 
 def schedule_reminder_job(
     reminder_id: str,
@@ -276,6 +296,34 @@ def add_task(
             "status": "error",
             "error": "User ID must be between 1 and 255 characters"
         }
+
+    # ============================================================================
+    # Idempotency Check: Prevent duplicate task creation
+    # ============================================================================
+    # OpenAI Agents SDK sometimes calls MCP tools multiple times
+    # Check if we recently created this same task (same user_id + title)
+
+    _clean_task_cache()  # Clean expired entries
+
+    cache_key = (user_id, title.strip().lower())
+    if cache_key in _task_creation_cache:
+        cached_task_data, cached_timestamp = _task_creation_cache[cache_key]
+        cache_age = (datetime.now(UTC) - cached_timestamp).total_seconds()
+
+        if cache_age < TASK_CACHE_TTL_SECONDS:
+            logger.warning(
+                f"⚠️  DUPLICATE TASK CREATION DETECTED - Returning cached task | "
+                f"user: {user_id[:20]}... | title: '{title}' | cache_age: {cache_age:.1f}s"
+            )
+            return {
+                "status": "success",
+                "data": cached_task_data,
+                "idempotent": True  # Flag to indicate this was cached
+            }
+
+    # ============================================================================
+    # Proceed with task creation (cache miss)
+    # ============================================================================
 
     # Validate priority
     if priority not in ["low", "normal", "high", "critical"]:
@@ -469,6 +517,10 @@ def add_task(
             # Publish task.created event (non-blocking)
             publish_task_event("task.created", task_data, user_id)
 
+            # Cache the created task for idempotency protection
+            _task_creation_cache[cache_key] = (task_data, datetime.now(UTC))
+            logger.info(f"✓ Cached task creation | user: {user_id[:20]}... | title: '{title}'")
+
             # Return success response
             return {
                 "status": "success",
@@ -583,6 +635,10 @@ def add_task(
 
                 # Publish task.created event (non-blocking)
                 publish_task_event("task.created", task_data, user_id)
+
+                # Cache the created task for idempotency protection
+                _task_creation_cache[cache_key] = (task_data, datetime.now(UTC))
+                logger.info(f"✓ Cached task creation | user: {user_id[:20]}... | title: '{title}'")
 
                 # Return success response
                 return {
