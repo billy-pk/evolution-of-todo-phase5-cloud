@@ -249,6 +249,168 @@ curl http://localhost:8000/health
 
 ---
 
+### Issue 7: Duplicate Task Creation from OpenAI Agents SDK
+
+**Symptoms:**
+- Single chat request creates TWO identical tasks in database
+- Two audit log entries for same task creation
+- OpenAI dashboard shows only ONE tool call, but database has duplicates
+- MCP server logs show two `CallToolRequest` events for same operation
+
+**Root Cause:**
+The **OpenAI Agents SDK** makes duplicate calls to MCP tools during streaming responses. Even though:
+- ChatKit sends ONE HTTP request to backend
+- OpenAI API receives ONE request and shows ONE tool call in dashboard
+- The Agents SDK's MCP integration calls the tool **TWICE** internally
+
+This appears to be undocumented behavior in the OpenAI Agents SDK when using MCP servers with streaming.
+
+**Evidence:**
+```
+MCP Server Logs:
+Processing request of type CallToolRequest
+Published task.created event: <event-id-1> for task <task-id>
+INFO: 10.244.0.154:35598 - "POST / HTTP/1.1" 200 OK
+
+Processing request of type CallToolRequest  <-- DUPLICATE CALL
+Published task.created event: <event-id-2> for task <another-task-id>
+INFO: 10.244.0.154:35606 - "POST / HTTP/1.1" 200 OK  <-- Different port
+```
+
+**Solution: Two-Layer Idempotency Protection**
+
+**Layer 1: MCP Server Tool-Level Idempotency** (PRIMARY FIX)
+
+File: `backend/tools/server.py`
+
+Add idempotency cache to `add_task` function:
+
+```python
+# At module level (after FastMCP initialization)
+_task_creation_cache = {}  # {(user_id, title_lower): (task_data, timestamp)}
+TASK_CACHE_TTL_SECONDS = 60  # 1 minute cache window
+
+def _clean_task_cache():
+    """Remove expired entries from task creation cache."""
+    now = datetime.now(UTC)
+    expired_keys = [
+        key for key, (_, timestamp) in _task_creation_cache.items()
+        if (now - timestamp).total_seconds() > TASK_CACHE_TTL_SECONDS
+    ]
+    for key in expired_keys:
+        del _task_creation_cache[key]
+
+# In add_task function, after validation:
+_clean_task_cache()
+cache_key = (user_id, title.strip().lower())
+
+if cache_key in _task_creation_cache:
+    cached_task_data, cached_timestamp = _task_creation_cache[cache_key]
+    cache_age = (datetime.now(UTC) - cached_timestamp).total_seconds()
+
+    if cache_age < TASK_CACHE_TTL_SECONDS:
+        logger.warning(f"⚠️  DUPLICATE TASK CREATION DETECTED - Returning cached task")
+        return {"status": "success", "data": cached_task_data, "idempotent": True}
+
+# After creating task:
+_task_creation_cache[cache_key] = (task_data, datetime.now(UTC))
+```
+
+**Layer 2: Audit Service Event-ID Deduplication**
+
+File: `services/audit-service/audit_service.py`
+
+Fix JSONB query in `write_audit_log` to prevent duplicate audit logs from Dapr pub/sub retries:
+
+```python
+# Check for duplicate event_id before creating audit log
+event_id = details.get("event_id")
+if event_id:
+    from sqlalchemy import text
+    existing = session.exec(
+        select(AuditLog).where(
+            text("details->>'event_id' = :event_id")
+        ).params(event_id=event_id)
+    ).first()
+
+    if existing:
+        logger.info(f"⚠️ DUPLICATE EVENT DETECTED - Idempotent skip")
+        return True
+```
+
+**Note on HTTP-Level Protection:**
+
+No ChatKit endpoint caching needed - testing showed ChatKit does not retry HTTP requests. The MCP tool-level fix is sufficient to prevent duplicate task creation.
+
+**Rebuild and Deploy:**
+
+```bash
+# Build MCP server with idempotency
+cd backend
+docker build -f tools/Dockerfile -t mcp-server:v2-idempotency .
+minikube image load mcp-server:v2-idempotency
+kubectl set image deployment/mcp-server mcp-server=mcp-server:v2-idempotency -n default
+kubectl rollout status deployment/mcp-server -n default
+
+# Build audit service with fixed JSONB query
+cd ../services/audit-service
+docker build -t audit-service:v3-idempotency-fixed .
+minikube image load audit-service:v3-idempotency-fixed
+kubectl set image deployment/audit-service audit-service=audit-service:v3-idempotency-fixed -n default
+kubectl rollout status deployment/audit-service -n default
+```
+
+**Verification:**
+
+1. Create a task via chat interface
+2. Check MCP server logs for duplicate detection:
+   ```bash
+   kubectl logs -n default -l app.kubernetes.io/name=mcp-server -c mcp-server --tail=50 | grep DUPLICATE
+   ```
+
+3. Verify only one task created:
+   ```bash
+   kubectl exec -n default deployment/backend-api -c backend-api -- python3 -c "
+   from sqlmodel import Session, create_engine, select
+   from models import Task
+   import os
+   engine = create_engine(os.getenv('DATABASE_URL'))
+   with Session(engine) as session:
+       tasks = session.exec(select(Task).order_by(Task.created_at.desc()).limit(3)).all()
+       for t in tasks: print(f'{t.title} | {t.created_at}')
+   "
+   ```
+
+4. Verify only one audit log:
+   ```bash
+   kubectl exec -n default deployment/backend-api -c backend-api -- python3 -c "
+   from sqlmodel import Session, create_engine, select
+   from models import AuditLog
+   import os
+   engine = create_engine(os.getenv('DATABASE_URL'))
+   with Session(engine) as session:
+       logs = session.exec(select(AuditLog).order_by(AuditLog.timestamp.desc()).limit(3)).all()
+       for l in logs: print(f'{l.event_type} | {l.task_id}')
+   "
+   ```
+
+**Expected Outcome:**
+
+After fix:
+- ✅ Single task entry in database
+- ✅ Single audit log entry
+- ✅ MCP logs show: `⚠️  DUPLICATE TASK CREATION DETECTED - Returning cached task`
+- ✅ Cache age typically < 1 second between duplicate calls
+
+**Key Insight:**
+
+This issue demonstrates that **idempotency must be implemented at every layer** in distributed event-driven systems:
+- HTTP endpoints (ChatKit retries)
+- MCP tools (SDK duplicate calls)
+- Event handlers (pub/sub at-least-once delivery)
+
+---
+
 ## Minikube Debug Commands
 
 ```bash

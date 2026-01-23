@@ -246,6 +246,11 @@ OPENAI_API_KEY=sk-...
 | User can't see data | user_id mismatch | Check JWT payload, DB records |
 | CORS errors | Origin not allowed | Add frontend URL to allow_origins |
 | MCP timeout | Deadlock (mounted mode) | Run MCP as separate service |
+| ETIMEDOUT in K8s | Node.js Happy Eyeballs | Disable autoSelectFamily |
+| Duplicate tasks | OpenAI SDK duplicate calls | Add MCP tool cache |
+| JWKS decrypt error | Secret changed | Clean jwks table |
+
+**For comprehensive troubleshooting, see [troubleshooting.md](troubleshooting.md).**
 
 ### MCP Deployment Decision
 
