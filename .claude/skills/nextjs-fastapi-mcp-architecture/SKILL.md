@@ -1,6 +1,6 @@
 ---
 name: nextjs-fastapi-mcp-architecture
-description: Build production-ready AI applications with Next.js frontend, FastAPI backend, and MCP tools. Includes JWT authentication flow, user isolation, and multi-server deployment patterns. Supports Kubernetes deployment with Helm charts, Minikube local development, and multi-service microservices architecture.
+description: Build production-ready AI applications with Next.js frontend, FastAPI backend, and MCP tools. Includes JWT authentication flow, user isolation, multi-server deployment patterns, and comprehensive troubleshooting for production issues. Supports Kubernetes deployment with Helm charts, Minikube local development, Dapr event-driven architecture, and idempotency patterns. Use when deploying to Kubernetes, debugging containerized environments, implementing event-driven microservices, or troubleshooting Node.js/PostgreSQL/OpenAI SDK issues in production.
 ---
 
 # Next.js + FastAPI + MCP Architecture
@@ -300,7 +300,8 @@ kubectl rollout restart deployment frontend backend-api
 | File | Content |
 |------|---------|
 | [reference.md](reference.md) | Complete implementation, deployment guides |
-| [kubernetes.md](kubernetes.md) | Helm charts, Minikube, secrets, troubleshooting |
+| [kubernetes.md](kubernetes.md) | Helm charts, Minikube, secrets |
+| [troubleshooting.md](troubleshooting.md) | **Production debugging guide** - Real deployment issues and solutions |
 | [examples.md](examples.md) | Working code examples |
 | [templates.md](templates.md) | Copy-paste ready code |
 
