@@ -38,7 +38,7 @@ All microservice pods running and healthy:
 |-----------|------|--------|
 | pubsub | Kafka/Redpanda | ✅ Configured |
 | pubsub-audit | Kafka/Redpanda | ✅ Configured |
-| statestore | Redis | ✅ Configured |
+| statestore | PostgreSQL | ✅ Configured |
 
 **Verification:**
 - All services have Dapr sidecars injected (daprd containers)
