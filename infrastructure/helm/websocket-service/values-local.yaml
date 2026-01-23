@@ -7,10 +7,9 @@ image:
 
 # Service configuration
 service:
-  type: NodePort
+  type: ClusterIP  # Use port-forwarding in WSL (NodePort doesn't work well)
   port: 8005
   targetPort: 8005
-  nodePort: 30082
 
 # Dapr sidecar configuration
 dapr:

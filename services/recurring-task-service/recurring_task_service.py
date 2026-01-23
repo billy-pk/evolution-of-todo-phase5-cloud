@@ -139,17 +139,20 @@ async def handle_task_event(request: Request):
     try:
         # Parse event payload
         event = await request.json()
-        logger.info(f"Received event: {event.get('event_type')} for task {event.get('data', {}).get('task_data', {}).get('id')}")
-
+        
         # Extract event data (Dapr wraps payload in 'data' field)
         event_data = event.get("data", event)  # Handle both wrapped and unwrapped
         event_type = event_data.get("event_type")
+        task_id = event_data.get("task_data", {}).get("id") or event_data.get("id")
+        
+        logger.info(f"Received event: {event_type} for task {task_id}")
+
         event_id = event_data.get("event_id")
 
         # Only process task.completed events
         if event_type != "task.completed":
             logger.debug(f"Ignoring non-task.completed event: {event_type}")
-            return {"status": "success", "message": "Event ignored (not task.completed)"}
+            return {"status": "SUCCESS", "message": "Event ignored (not task.completed)"}
 
         # Extract task data
         task_data = event_data.get("task_data", {})
@@ -159,7 +162,7 @@ async def handle_task_event(request: Request):
         # Check if task has recurrence
         if not recurrence_id:
             logger.debug(f"Task {task_data.get('id')} is not recurring, skipping")
-            return {"status": "success", "message": "Task is not recurring"}
+            return {"status": "SUCCESS", "message": "Task is not recurring"}
 
         # Process recurring task
         result = await process_recurring_task(
@@ -173,8 +176,8 @@ async def handle_task_event(request: Request):
 
     except Exception as e:
         logger.error(f"Error handling task event: {str(e)}", exc_info=True)
-        # Return 200 to prevent Dapr retry (logged error for manual investigation)
-        return {"status": "error", "message": str(e)}
+        # Return DROP to prevent Dapr retry loop on bad data
+        return {"status": "DROP", "message": str(e)}
 
 
 async def process_recurring_task(
@@ -212,13 +215,13 @@ async def process_recurring_task(
 
             if not recurrence_rule:
                 logger.warning(f"RecurrenceRule {recurrence_id} not found, skipping")
-                return {"status": "error", "message": "RecurrenceRule not found"}
+                return {"status": "DROP", "message": "RecurrenceRule not found"}
 
             # Get current due_date (base for next occurrence)
             current_due_date_str = task_data.get("due_date")
             if not current_due_date_str:
                 logger.warning(f"Task {task_data.get('id')} has no due_date, cannot calculate next occurrence")
-                return {"status": "error", "message": "Task has no due_date"}
+                return {"status": "DROP", "message": "Task has no due_date"}
 
             # Parse due_date
             current_due_date = datetime.fromisoformat(current_due_date_str.replace('Z', '+00:00'))
@@ -251,7 +254,7 @@ async def process_recurring_task(
                     f"Next instance already exists (task_id={existing_task.id}), skipping creation "
                     f"(idempotency check passed)"
                 )
-                return {"status": "success", "message": "Next instance already exists (idempotent)"}
+                return {"status": "SUCCESS", "message": "Next instance already exists (idempotent)"}
 
             # Create new task instance
             new_task = Task(
@@ -301,7 +304,7 @@ async def process_recurring_task(
                     # Non-blocking: task created successfully, event publish failed but logged
 
             return {
-                "status": "success",
+                "status": "SUCCESS",
                 "message": f"Next task instance created: {new_task.id}",
                 "next_task_id": str(new_task.id),
                 "next_due_date": next_due_date.isoformat()
@@ -310,7 +313,7 @@ async def process_recurring_task(
         except Exception as e:
             logger.error(f"Error processing recurring task: {str(e)}", exc_info=True)
             session.rollback()
-            return {"status": "error", "message": str(e)}
+            return {"status": "RETRY", "message": str(e)}
 
 
 if __name__ == "__main__":

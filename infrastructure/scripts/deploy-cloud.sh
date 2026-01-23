@@ -248,6 +248,13 @@ deploy_services() {
     print_warning "DRY RUN MODE - No actual deployment will occur"
   fi
 
+  # Deploy MCP Server (internal ClusterIP service - must be deployed before backend-api)
+  print_step "Deploying mcp-server..."
+  helm upgrade --install mcp-server ./infrastructure/helm/mcp-server/ \
+    -f ./infrastructure/helm/mcp-server/values-cloud.yaml \
+    $helm_flags
+  print_success "mcp-server deployed"
+
   # Deploy Backend API
   print_step "Deploying backend-api..."
   helm upgrade --install backend-api ./infrastructure/helm/backend-api/ \

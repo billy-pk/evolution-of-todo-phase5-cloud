@@ -33,6 +33,9 @@ from services.recurrence_service import RecurrenceService
 from services.reminder_service import ReminderService
 from dapr.clients import DaprClient
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # Configure transport security for production deployment
@@ -85,6 +88,26 @@ mcp = FastMCP(
     streamable_http_path="/",  # Path where MCP will be accessible
     transport_security=transport_security,
 )
+
+# ============================================================================
+# Idempotency Protection for Tool Calls
+# ============================================================================
+# Protects against duplicate tool invocations from OpenAI Agents SDK
+# The SDK sometimes calls MCP tools multiple times for a single user request
+
+_task_creation_cache = {}  # {(user_id, title_lower): (task_data, timestamp)}
+TASK_CACHE_TTL_SECONDS = 60  # 1 minute cache window
+
+
+def _clean_task_cache():
+    """Remove expired entries from task creation cache."""
+    now = datetime.now(UTC)
+    expired_keys = [
+        key for key, (_, timestamp) in _task_creation_cache.items()
+        if (now - timestamp).total_seconds() > TASK_CACHE_TTL_SECONDS
+    ]
+    for key in expired_keys:
+        del _task_creation_cache[key]
 
 
 def schedule_reminder_job(
@@ -143,6 +166,83 @@ def schedule_reminder_job(
         return False
 
 
+def publish_task_event(
+    event_type: str,
+    task_data: dict,
+    user_id: str,
+    previous_data: dict = None,
+    source: str = "mcp_tool"
+) -> bool:
+    """
+    Publish task lifecycle event via Dapr Pub/Sub.
+
+    Args:
+        event_type: task.created, task.updated, task.completed, task.deleted
+        task_data: Full task data dictionary
+        user_id: User ID for isolation
+        previous_data: Previous state (for updates)
+        source: Event source identifier
+
+    Returns:
+        bool: True if published successfully, False otherwise
+    """
+    try:
+        with DaprClient() as dapr:
+            event_id = str(uuid4())
+            correlation_id = str(uuid4())
+
+            event_payload = {
+                "event_id": event_id,
+                "event_type": event_type,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "user_id": user_id,
+                "task_id": task_data.get("task_id"),
+                "task_data": task_data,
+                "previous_data": previous_data,
+                "schema_version": "1.0.0",
+                "metadata": {
+                    "source": source,
+                    "correlation_id": correlation_id
+                }
+            }
+
+            # Publish to task-events topic for audit service
+            dapr.publish_event(
+                pubsub_name="pubsub",
+                topic_name="task-events",
+                data=json.dumps(event_payload),
+                data_content_type="application/json"
+            )
+
+            logger.info(f"Published {event_type} event: {event_id} for task {task_data.get('task_id')} (user: {user_id})")
+
+            # Also publish to task-updates topic for WebSocket service
+            update_payload = {
+                "update_type": event_type.replace(".", "_"),
+                "event_id": event_id,
+                "task_id": task_data.get("task_id"),
+                "user_id": user_id,
+                "task_data": task_data,
+                "source": source,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "schema_version": "1.0.0"
+            }
+
+            dapr.publish_event(
+                pubsub_name="pubsub",
+                topic_name="task-updates",
+                data=json.dumps(update_payload),
+                data_content_type="application/json"
+            )
+
+            return True
+
+    except Exception as e:
+        logger.error(f"Failed to publish {event_type} event: {e}")
+        # Non-blocking: task was created successfully, event publishing failed
+        return False
+
+
 def add_task(
     user_id: str,
     title: str,
@@ -196,6 +296,34 @@ def add_task(
             "status": "error",
             "error": "User ID must be between 1 and 255 characters"
         }
+
+    # ============================================================================
+    # Idempotency Check: Prevent duplicate task creation
+    # ============================================================================
+    # OpenAI Agents SDK sometimes calls MCP tools multiple times
+    # Check if we recently created this same task (same user_id + title)
+
+    _clean_task_cache()  # Clean expired entries
+
+    cache_key = (user_id, title.strip().lower())
+    if cache_key in _task_creation_cache:
+        cached_task_data, cached_timestamp = _task_creation_cache[cache_key]
+        cache_age = (datetime.now(UTC) - cached_timestamp).total_seconds()
+
+        if cache_age < TASK_CACHE_TTL_SECONDS:
+            logger.warning(
+                f"⚠️  DUPLICATE TASK CREATION DETECTED - Returning cached task | "
+                f"user: {user_id[:20]}... | title: '{title}' | cache_age: {cache_age:.1f}s"
+            )
+            return {
+                "status": "success",
+                "data": cached_task_data,
+                "idempotent": True  # Flag to indicate this was cached
+            }
+
+    # ============================================================================
+    # Proceed with task creation (cache miss)
+    # ============================================================================
 
     # Validate priority
     if priority not in ["low", "normal", "high", "critical"]:
@@ -370,23 +498,33 @@ def add_task(
                 _session.commit()
                 _session.refresh(task)
 
+            # Build task data for response and event
+            task_data = {
+                "task_id": str(task.id),
+                "title": task.title,
+                "description": task.description,
+                "completed": task.completed,
+                "priority": task.priority,
+                "tags": task.tags,
+                "due_date": task.due_date.isoformat() if task.due_date else None,
+                "reminder_offset": reminder_offset,
+                "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
+                "recurrence_pattern": recurrence_pattern,
+                "recurrence_interval": recurrence_interval,
+                "created_at": task.created_at.isoformat()
+            }
+
+            # Publish task.created event (non-blocking)
+            publish_task_event("task.created", task_data, user_id)
+
+            # Cache the created task for idempotency protection
+            _task_creation_cache[cache_key] = (task_data, datetime.now(UTC))
+            logger.info(f"✓ Cached task creation | user: {user_id[:20]}... | title: '{title}'")
+
             # Return success response
             return {
                 "status": "success",
-                "data": {
-                    "task_id": str(task.id),
-                    "title": task.title,
-                    "description": task.description,
-                    "completed": task.completed,
-                    "priority": task.priority,
-                    "tags": task.tags,
-                    "due_date": task.due_date.isoformat() if task.due_date else None,
-                    "reminder_offset": reminder_offset,
-                    "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
-                    "recurrence_pattern": recurrence_pattern,
-                    "recurrence_interval": recurrence_interval,
-                    "created_at": task.created_at.isoformat()
-                }
+                "data": task_data
             }
         else:
             with Session(engine) as session:
@@ -479,23 +617,33 @@ def add_task(
                     session.commit()
                     session.refresh(task)
 
+                # Build task data for response and event
+                task_data = {
+                    "task_id": str(task.id),
+                    "title": task.title,
+                    "description": task.description,
+                    "completed": task.completed,
+                    "priority": task.priority,
+                    "tags": task.tags,
+                    "due_date": task.due_date.isoformat() if task.due_date else None,
+                    "reminder_offset": reminder_offset,
+                    "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
+                    "recurrence_pattern": recurrence_pattern,
+                    "recurrence_interval": recurrence_interval,
+                    "created_at": task.created_at.isoformat()
+                }
+
+                # Publish task.created event (non-blocking)
+                publish_task_event("task.created", task_data, user_id)
+
+                # Cache the created task for idempotency protection
+                _task_creation_cache[cache_key] = (task_data, datetime.now(UTC))
+                logger.info(f"✓ Cached task creation | user: {user_id[:20]}... | title: '{title}'")
+
                 # Return success response
                 return {
                     "status": "success",
-                    "data": {
-                        "task_id": str(task.id),
-                        "title": task.title,
-                        "description": task.description,
-                        "completed": task.completed,
-                        "priority": task.priority,
-                        "tags": task.tags,
-                        "due_date": task.due_date.isoformat() if task.due_date else None,
-                        "reminder_offset": reminder_offset,
-                        "recurrence_id": str(task.recurrence_id) if task.recurrence_id else None,
-                        "recurrence_pattern": recurrence_pattern,
-                        "recurrence_interval": recurrence_interval,
-                        "created_at": task.created_at.isoformat()
-                    }
+                    "data": task_data
                 }
     except ValidationError as e:
         return {
@@ -509,16 +657,34 @@ def add_task(
         }
 
 
-def list_tasks(user_id: str, status: str = "all", _session: Session = None) -> dict:
-    """List tasks for a user, optionally filtered by completion status.
+def list_tasks(
+    user_id: str,
+    status: str = "all",
+    priority: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    due_date_from: Optional[str] = None,
+    due_date_to: Optional[str] = None,
+    search_query: Optional[str] = None,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
+    _session: Session = None
+) -> dict:
+    """List tasks for a user with optional filtering, searching, and sorting.
 
     Args:
         user_id: User ID from JWT token (1-255 characters)
         status: Filter by status - "all", "pending", or "completed" (default: "all")
+        priority: Filter by priority - "low", "normal", "high", "critical" (optional)
+        tags: Filter by tags - tasks containing ANY of these tags (optional)
+        due_date_from: Filter tasks with due_date >= this ISO8601 datetime (optional)
+        due_date_to: Filter tasks with due_date <= this ISO8601 datetime (optional)
+        search_query: Text search in title and description (case-insensitive) (optional)
+        sort_by: Field to sort by - "created_at", "due_date", "priority", "title" (default: "created_at")
+        sort_order: Sort order - "asc" or "desc" (default: "desc")
         _session: Optional database session (for testing)
 
     Returns:
-        Dict with status and list of tasks
+        Dict with status and list of tasks including priority, tags, due_date, updated_at
     """
     # Validate input parameters
     if not user_id or len(user_id) > 255:
@@ -533,32 +699,114 @@ def list_tasks(user_id: str, status: str = "all", _session: Session = None) -> d
             "error": "Status must be 'all', 'pending', or 'completed'"
         }
 
+    valid_priorities = ["low", "normal", "high", "critical"]
+    if priority is not None and priority not in valid_priorities:
+        return {
+            "status": "error",
+            "error": f"Priority must be one of: {', '.join(valid_priorities)}"
+        }
+
+    valid_sort_fields = ["created_at", "due_date", "priority", "title"]
+    if sort_by not in valid_sort_fields:
+        return {
+            "status": "error",
+            "error": f"sort_by must be one of: {', '.join(valid_sort_fields)}"
+        }
+
+    if sort_order not in ["asc", "desc"]:
+        return {
+            "status": "error",
+            "error": "sort_order must be 'asc' or 'desc'"
+        }
+
+    # Parse date filters
+    parsed_due_date_from = None
+    parsed_due_date_to = None
+    if due_date_from:
+        try:
+            parsed_due_date_from = datetime.fromisoformat(due_date_from.replace('Z', '+00:00'))
+        except ValueError:
+            return {
+                "status": "error",
+                "error": "due_date_from must be a valid ISO8601 datetime"
+            }
+    if due_date_to:
+        try:
+            parsed_due_date_to = datetime.fromisoformat(due_date_to.replace('Z', '+00:00'))
+        except ValueError:
+            return {
+                "status": "error",
+                "error": "due_date_to must be a valid ISO8601 datetime"
+            }
+
+    def build_query(statement):
+        """Apply filters and sorting to the query statement."""
+        # Apply status filter
+        if status == "pending":
+            statement = statement.where(Task.completed == False)
+        elif status == "completed":
+            statement = statement.where(Task.completed == True)
+
+        # Apply priority filter
+        if priority is not None:
+            statement = statement.where(Task.priority == priority)
+
+        # Apply tags filter (tasks containing ANY of these tags)
+        if tags:
+            statement = statement.where(Task.tags.overlap(tags))
+
+        # Apply due_date range filters
+        if parsed_due_date_from:
+            statement = statement.where(Task.due_date >= parsed_due_date_from)
+        if parsed_due_date_to:
+            statement = statement.where(Task.due_date <= parsed_due_date_to)
+
+        # Apply search query (case-insensitive in title or description)
+        if search_query:
+            search_pattern = f"%{search_query}%"
+            from sqlalchemy import or_
+            statement = statement.where(
+                or_(
+                    Task.title.ilike(search_pattern),
+                    Task.description.ilike(search_pattern)
+                )
+            )
+
+        # Apply sorting
+        sort_column = getattr(Task, sort_by, Task.created_at)
+        if sort_order == "desc":
+            statement = statement.order_by(sort_column.desc())
+        else:
+            statement = statement.order_by(sort_column.asc())
+
+        return statement
+
+    def format_task(task):
+        """Format a task for the response."""
+        return {
+            "task_id": str(task.id),
+            "title": task.title,
+            "description": task.description,
+            "completed": task.completed,
+            "priority": task.priority,
+            "tags": task.tags,
+            "due_date": task.due_date.isoformat() if task.due_date else None,
+            "created_at": task.created_at.isoformat(),
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None
+        }
+
     try:
         # Use provided session or create new one
         if _session:
             # Build query
             statement = select(Task).where(Task.user_id == user_id)
-
-            # Apply status filter
-            if status == "pending":
-                statement = statement.where(Task.completed == False)
-            elif status == "completed":
-                statement = statement.where(Task.completed == True)
+            statement = build_query(statement)
 
             # Execute query
             tasks = _session.exec(statement).all()
 
             # Format response
-            tasks_data = [
-                {
-                    "task_id": str(task.id),
-                    "title": task.title,
-                    "description": task.description,
-                    "completed": task.completed,
-                    "created_at": task.created_at.isoformat()
-                }
-                for task in tasks
-            ]
+            tasks_data = [format_task(task) for task in tasks]
 
             return {
                 "status": "success",
@@ -570,27 +818,13 @@ def list_tasks(user_id: str, status: str = "all", _session: Session = None) -> d
             with Session(engine) as session:
                 # Build query
                 statement = select(Task).where(Task.user_id == user_id)
-
-                # Apply status filter
-                if status == "pending":
-                    statement = statement.where(Task.completed == False)
-                elif status == "completed":
-                    statement = statement.where(Task.completed == True)
+                statement = build_query(statement)
 
                 # Execute query
                 tasks = session.exec(statement).all()
 
                 # Format response
-                tasks_data = [
-                    {
-                        "task_id": str(task.id),
-                        "title": task.title,
-                        "description": task.description,
-                        "completed": task.completed,
-                        "created_at": task.created_at.isoformat()
-                    }
-                    for task in tasks
-                ]
+                tasks_data = [format_task(task) for task in tasks]
 
                 return {
                     "status": "success",
@@ -659,17 +893,67 @@ def add_task_tool(
 
 
 @mcp.tool()
-def list_tasks_tool(user_id: str, status: str = "all") -> dict:
-    """MCP tool wrapper for list_tasks. List user's tasks with optional status filter.
+def list_tasks_tool(
+    user_id: str,
+    status: str = "all",
+    priority: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    due_date_from: Optional[str] = None,
+    due_date_to: Optional[str] = None,
+    search_query: Optional[str] = None,
+    sort_by: str = "created_at",
+    sort_order: str = "desc"
+) -> dict:
+    """MCP tool wrapper for list_tasks. List user's tasks with filtering, searching, and sorting.
 
     Args:
         user_id: User ID from JWT token (1-255 characters)
         status: Filter by status - "all", "pending", or "completed" (default: "all")
+        priority: Filter by priority - "low", "normal", "high", or "critical" (optional)
+        tags: Filter by tags - tasks containing ANY of these tags (optional)
+        due_date_from: Filter tasks with due_date >= this ISO8601 datetime (optional)
+        due_date_to: Filter tasks with due_date <= this ISO8601 datetime (optional)
+        search_query: Text search in title and description (case-insensitive) (optional)
+        sort_by: Field to sort by - "created_at", "due_date", "priority", "title" (default: "created_at")
+        sort_order: Sort order - "asc" or "desc" (default: "desc")
 
     Returns:
-        Dict with status and list of tasks
+        Dict with status and list of tasks including priority, tags, due_date, updated_at
+
+    Example:
+        # List high priority tasks due this week
+        list_tasks_tool(
+            user_id="user-123",
+            priority="high",
+            due_date_from="2026-01-13T00:00:00Z",
+            due_date_to="2026-01-19T23:59:59Z",
+            sort_by="due_date",
+            sort_order="asc"
+        )
+
+        # Search for tasks with "report" in title
+        list_tasks_tool(
+            user_id="user-123",
+            search_query="report"
+        )
+
+        # List tasks tagged with "work" or "urgent"
+        list_tasks_tool(
+            user_id="user-123",
+            tags=["work", "urgent"]
+        )
     """
-    return list_tasks(user_id, status)
+    return list_tasks(
+        user_id=user_id,
+        status=status,
+        priority=priority,
+        tags=tags,
+        due_date_from=due_date_from,
+        due_date_to=due_date_to,
+        search_query=search_query,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )
 
 
 def complete_task(user_id: str, task_id: str, _session: Session = None) -> dict:
@@ -725,15 +1009,17 @@ def complete_task(user_id: str, task_id: str, _session: Session = None) -> dict:
             _session.commit()
             _session.refresh(task)
 
-            return {
-                "status": "success",
-                "data": {
-                    "task_id": str(task.id),
-                    "title": task.title,
-                    "completed": task.completed,
-                    "updated_at": task.updated_at.isoformat()
-                }
+            task_data = {
+                "task_id": str(task.id),
+                "title": task.title,
+                "completed": task.completed,
+                "updated_at": task.updated_at.isoformat()
             }
+
+            # Publish task.completed event
+            publish_task_event("task.completed", task_data, user_id, {"completed": False})
+
+            return {"status": "success", "data": task_data}
         else:
             with Session(engine) as session:
                 # Find task
@@ -760,15 +1046,17 @@ def complete_task(user_id: str, task_id: str, _session: Session = None) -> dict:
                 session.commit()
                 session.refresh(task)
 
-                return {
-                    "status": "success",
-                    "data": {
-                        "task_id": str(task.id),
-                        "title": task.title,
-                        "completed": task.completed,
-                        "updated_at": task.updated_at.isoformat()
-                    }
+                task_data = {
+                    "task_id": str(task.id),
+                    "title": task.title,
+                    "completed": task.completed,
+                    "updated_at": task.updated_at.isoformat()
                 }
+
+                # Publish task.completed event
+                publish_task_event("task.completed", task_data, user_id, {"completed": False})
+
+                return {"status": "success", "data": task_data}
     except Exception as e:
         return {
             "status": "error",
@@ -949,8 +1237,9 @@ def update_task(
                             id=uuid4(),
                             pattern=recurrence_pattern,
                             interval=recurrence_interval,
-                                                rule_metadata=metadata
-                                            )                        _session.add(recurrence_rule)
+                            rule_metadata=metadata
+                        )
+                        _session.add(recurrence_rule)
                         _session.flush()
                         task.recurrence_id = recurrence_rule.id
 
@@ -1042,8 +1331,9 @@ def update_task(
                                 id=uuid4(),
                                 pattern=recurrence_pattern,
                                 interval=recurrence_interval,
-                                                    rule_metadata=metadata
-                                                )                            session.add(recurrence_rule)
+                                rule_metadata=metadata
+                            )
+                            session.add(recurrence_rule)
                             session.flush()
                             task.recurrence_id = recurrence_rule.id
 
@@ -1143,17 +1433,21 @@ def delete_task(user_id: str, task_id: str, _session: Session = None) -> dict:
                     "error": "Unauthorized: Task does not belong to user"
                 }
 
+            # Capture task data before deletion for event
+            task_data = {
+                "task_id": str(task.id),
+                "title": task.title,
+                "deleted": True
+            }
+
             # Delete task
             _session.delete(task)
             _session.commit()
 
-            return {
-                "status": "success",
-                "data": {
-                    "task_id": str(task_uuid),
-                    "deleted": True
-                }
-            }
+            # Publish task.deleted event
+            publish_task_event("task.deleted", task_data, user_id)
+
+            return {"status": "success", "data": task_data}
         else:
             with Session(engine) as session:
                 # Find task
@@ -1173,17 +1467,21 @@ def delete_task(user_id: str, task_id: str, _session: Session = None) -> dict:
                         "error": "Unauthorized: Task does not belong to user"
                     }
 
+                # Capture task data before deletion for event
+                task_data = {
+                    "task_id": str(task.id),
+                    "title": task.title,
+                    "deleted": True
+                }
+
                 # Delete task
                 session.delete(task)
                 session.commit()
 
-                return {
-                    "status": "success",
-                    "data": {
-                        "task_id": str(task_uuid),
-                        "deleted": True
-                    }
-                }
+                # Publish task.deleted event
+                publish_task_event("task.deleted", task_data, user_id)
+
+                return {"status": "success", "data": task_data}
     except Exception as e:
         return {
             "status": "error",

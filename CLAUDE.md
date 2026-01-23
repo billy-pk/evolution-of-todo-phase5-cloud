@@ -193,11 +193,22 @@ lib/
 - Run: `npm test`
 
 ### Manual Testing
-See `TESTING_GUIDE.md` for comprehensive testing instructions including:
-- Authentication flow testing
-- Chat functionality testing
-- Task management via UI vs AI
-- Multi-server coordination
+
+**Phase 5 Microservices Testing:**
+Run automated health checks and event flow tests:
+```bash
+# Quick health check (17 tests)
+./test-microservices-simple.sh
+
+# Event flow verification
+./test-event-flow.sh
+```
+
+See `TEST_RESULTS.md` for latest test execution results including:
+- Pod health status and Dapr components
+- Event-driven architecture verification
+- Microservices communication testing
+- Database and Redpanda connectivity
 
 ## Code Standards and Conventions
 
@@ -228,11 +239,14 @@ See `TESTING_GUIDE.md` for comprehensive testing instructions including:
 
 ## Important Files and References
 
-- `CONSTITUTION.md` - Phase 3 mission, goals, and architectural principles
-- `TESTING_GUIDE.md` - Complete testing instructions
+- `CONSTITUTION.md` - Phase 5 mission, goals, and architectural principles
+- `TEST_RESULTS.md` - Latest microservices test execution results
+- `DEPLOYMENT_TROUBLESHOOTING.md` - Kubernetes/Minikube troubleshooting guide
+- `test-microservices-simple.sh` - Automated health check script
+- `test-event-flow.sh` - Event propagation testing script
 - `.specify/` - Spec-Driven Development templates and scripts
 - `history/prompts/` - Prompt History Records (PHRs)
-- `specs/001-ai-chatbot/` - Feature specifications for AI chatbot
+- `specs/005-event-driven-microservices/` - Phase 5 specifications
 
 ## Spec-Driven Development (SDD) Workflow
 

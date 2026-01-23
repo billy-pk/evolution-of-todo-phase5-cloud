@@ -152,6 +152,7 @@ dependencies = [
     { name = "alembic" },
     { name = "cryptography" },
     { name = "dapr" },
+    { name = "dapr-ext-fastapi" },
     { name = "dateparser" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -185,6 +186,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.17.2" },
     { name = "cryptography", specifier = ">=46.0.3" },
     { name = "dapr", specifier = ">=1.16.0" },
+    { name = "dapr-ext-fastapi", specifier = ">=1.16.0" },
     { name = "dateparser", specifier = ">=1.2.2" },
     { name = "fastapi", specifier = ">=0.124.0" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -486,6 +488,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a4/b1/d39ba15d453b67b93d53ec56de7eb9324cb8bbf0599afcb2c0ade990b7ae/dapr-1.16.0.tar.gz", hash = "sha256:c7e3d005552a598d07608d0d502b2bc432e86678f94b2beccc13a096b9198684", size = 122467, upload-time = "2025-09-17T10:59:57.138Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/3e/de39e18e14d07882fcff028227c2dbe7fa202f09413127d4de32b03e0884/dapr-1.16.0-py3-none-any.whl", hash = "sha256:076dd559a0b450eae24b1c2ae779c9299ed3e06a05c1f72719a6613af8d19ced", size = 166710, upload-time = "2025-09-17T10:59:55.473Z" },
+]
+
+[[package]]
+name = "dapr-ext-fastapi"
+version = "1.16.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dapr" },
+    { name = "fastapi" },
+    { name = "uvicorn" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/99/992fdaf19e41300db1e72efddaec894cac2c123a5f78ca4b2555d457f576/dapr-ext-fastapi-1.16.0.tar.gz", hash = "sha256:10108c3831ae2164c1589c86e6b86fe8ee146650514961841d9ab5eb783f4a76", size = 8789, upload-time = "2025-09-17T10:59:44.399Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/67/57/1a5aa18daf60a1d1059c0b36aa82c1e8b70cdab72e00d20f44520eded816/dapr_ext_fastapi-1.16.0-py3-none-any.whl", hash = "sha256:9dcc0aaceb361c5132295450a71d4f9ddec09ab5848dbfe2a8b0cf9050fd903e", size = 10460, upload-time = "2025-09-17T10:59:43.139Z" },
 ]
 
 [[package]]

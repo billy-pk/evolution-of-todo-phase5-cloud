@@ -555,6 +555,8 @@ async def chatkit_endpoint(request: Request):
 
     All communication happens through a single POST endpoint that returns
     either JSON directly or streams SSE JSON events.
+
+    Note: Duplicate prevention is handled at the MCP tool level, not here.
     """
     try:
         logger.info("=== ChatKit endpoint received request ===")
@@ -576,13 +578,14 @@ async def chatkit_endpoint(request: Request):
 
         logger.info(f"ChatKit request authenticated for user {user_id}")
 
-        # Create context with user_id for authorization
-        context = {"user_id": user_id}
-
         # Get request body
         body = await request.body()
 
+        # Create context with user_id for authorization
+        context = {"user_id": user_id}
+
         # Process request through ChatKit server
+        logger.info("Processing request through ChatKit server")
         result = await chatkit_server.process(body, context)
 
         # Return streaming or JSON response
@@ -595,7 +598,8 @@ async def chatkit_endpoint(request: Request):
         else:
             # Fallback for any other response type
             logger.info(f"Returning response of type {type(result)}")
-            return Response(content=str(result), media_type="application/json")
+            response_content = str(result)
+            return Response(content=response_content, media_type="application/json")
 
     except HTTPException:
         raise

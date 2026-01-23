@@ -35,7 +35,7 @@ configMap:
   data:
     APP_NAME: "audit-service"
     ENVIRONMENT: "local"
-    DAPR_PUBSUB_NAME: "pubsub"
+    DAPR_PUBSUB_NAME: "pubsub-audit"
 
 # Resource limits for local development (reduced)
 resources:

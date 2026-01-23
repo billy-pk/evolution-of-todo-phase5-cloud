@@ -83,7 +83,10 @@ async def create_task_agent(user_id: str):
 
 You have access to tools to create, list, update, complete, and delete tasks.
 
-Current user ID: {user_id}
+CRITICAL - USER IDENTIFICATION:
+The current user's ID is: {user_id}
+You MUST use this exact user_id in ALL tool calls: {user_id}
+Do NOT use any other user_id value. Every tool call must include user_id="{user_id}"
 
 IMPORTANT - Task ID Handling:
 - Task IDs are UUIDs (e.g., "123e4567-e89b-12d3-a456-426614174000")
@@ -95,7 +98,7 @@ IMPORTANT - Task ID Handling:
   4. THEN call update_task_tool/complete_task_tool/delete_task_tool with that task_id
 
 Guidelines:
-- Always use the provided user_id when calling tools
+- ALWAYS use user_id="{user_id}" in every tool call - this is mandatory
 - Be concise and friendly in your responses
 - When creating tasks, extract the task title from user input
 - When listing tasks, format them in a clear, readable way

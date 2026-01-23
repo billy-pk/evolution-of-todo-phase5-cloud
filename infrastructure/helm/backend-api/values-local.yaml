@@ -6,14 +6,13 @@
 image:
   repository: backend-api
   pullPolicy: Never  # Use local Docker images (built with `docker build`)
-  tag: "v2"
+  tag: "latest"
 
 # Service configuration for local development
 service:
-  type: NodePort
+  type: ClusterIP  # Use port-forwarding in WSL (NodePort doesn't work well)
   port: 8000
   targetPort: 8000
-  nodePort: 30081  # Fixed NodePort for easy local access (http://localhost:30081)
 
 # Dapr configuration for local development
 dapr:
@@ -33,17 +32,19 @@ env:
   # Example: helm install backend-api ./backend-api -f values-local.yaml --set-string env.DATABASE_URL="postgresql://..."
   DATABASE_URL: ""
 
-  # Better Auth configuration (local frontend)
+  # Better Auth configuration (in-cluster communication)
   BETTER_AUTH_SECRET: ""  # IMPORTANT: Set this via --set-string
-  BETTER_AUTH_ISSUER: "http://localhost:30080"  # Frontend NodePort
-  BETTER_AUTH_JWKS_URL: "http://localhost:30080/api/auth/jwks"
+  BETTER_AUTH_URL: "http://frontend:3000"
+  BETTER_AUTH_ISSUER: "http://frontend:3000"  # In-cluster service
+  BETTER_AUTH_JWKS_URL: "http://frontend:3000/api/auth/jwks"
 
   # OpenAI API key
   # IMPORTANT: Set this value using --set-string during helm install
   OPENAI_API_KEY: ""
 
-  # MCP Server URL (local development, running in same cluster)
+  # MCP Server configuration (separate mode - internal ClusterIP service)
   MCP_SERVER_URL: "http://mcp-server:8001"
+  MOUNT_MCP_SERVER: "false"
 
   # Dapr ports (default Dapr sidecar ports)
   DAPR_HTTP_PORT: "3500"
@@ -75,20 +76,12 @@ resources:
 autoscaling:
   enabled: false
 
-# Pod annotations for Dapr sidecar injection (local configuration)
+# Pod annotations (Dapr enabled for event-driven architecture)
 podAnnotations:
   dapr.io/enabled: "true"
   dapr.io/app-id: "backend-api"
   dapr.io/app-port: "8000"
   dapr.io/app-protocol: "http"
-  dapr.io/enable-metrics: "true"
-  dapr.io/metrics-port: "9090"
-  dapr.io/log-level: "debug"
-  dapr.io/config: "dapr-config-local"
-  dapr.io/env: "DAPR_UNSAFE_SKIP_CONTAINER_UID_GID_CHECK=true"
 
-# Security context (relaxed for local development)
-securityContext:
-  runAsNonRoot: false  # Allow root for local debugging
-  runAsUser: 0
-  fsGroup: 0
+# Security context (empty for local development - allows Dapr sidecar to run)
+securityContext: {}

@@ -8,6 +8,7 @@ dependencies = [
     "alembic>=1.17.2",
     "cryptography>=46.0.3",
     "dapr>=1.16.0",
+    "dapr-ext-fastapi>=1.16.0",
     "dateparser>=1.2.2",
     "fastapi>=0.124.0",
     "httpx>=0.28.1",

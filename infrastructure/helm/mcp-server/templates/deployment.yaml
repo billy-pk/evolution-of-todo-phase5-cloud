@@ -35,19 +35,19 @@ spec:
           containerPort: {{ .Values.service.targetPort }}
           protocol: TCP
         env:
-        # Database configuration (reusing backend secrets as it needs DB access)
+        # Database configuration
         - name: DATABASE_URL
           valueFrom:
             secretKeyRef:
-              name: backend-api-secrets
-              key: database-url
+              name: postgres-credentials
+              key: connectionString
 
         # Better Auth configuration
         - name: BETTER_AUTH_SECRET
           valueFrom:
             secretKeyRef:
-              name: backend-api-secrets
-              key: better-auth-secret
+              name: better-auth-secret
+              key: secret
         
         - name: ALLOWED_HOSTS
           value: {{ .Values.env.ALLOWED_HOSTS | quote }}

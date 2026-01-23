@@ -1,0 +1,61 @@
+# values-cloud.yaml
+# Overrides for cloud (OKE) deployment
+# Usage: helm install mcp-server ./mcp-server -f values-cloud.yaml
+
+replicaCount: 2  # High availability for production
+
+# Image configuration for cloud deployment
+image:
+  repository: mcp-server
+  pullPolicy: Always
+  tag: "latest"
+
+# Service configuration - ClusterIP (internal only, accessed by backend-api)
+service:
+  type: ClusterIP
+  port: 8001
+  targetPort: 8001
+
+# Dapr sidecar configuration
+dapr:
+  enabled: true
+  appId: mcp-server
+  appPort: 8001
+  appProtocol: http
+  enableMetrics: true
+  metricsPort: 9090
+  logLevel: info
+
+# Environment variables
+env:
+  # Allowed Hosts for MCP Server
+  ALLOWED_HOSTS: "mcp-server,mcp-server.default.svc.cluster.local"
+
+  # Logging
+  LOG_LEVEL: "info"
+
+# Resource limits for cloud deployment (production-ready)
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+
+# Liveness and readiness probes
+livenessProbe:
+  tcpSocket:
+    port: 8001
+  initialDelaySeconds: 20
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  tcpSocket:
+    port: 8001
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3

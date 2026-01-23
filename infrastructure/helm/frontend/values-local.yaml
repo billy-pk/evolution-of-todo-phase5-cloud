@@ -10,20 +10,19 @@ image:
 
 # Service configuration for local development
 service:
-  type: NodePort
+  type: ClusterIP  # Use port-forwarding in WSL (NodePort doesn't work well)
   port: 3000
   targetPort: 3000
-  nodePort: 30080  # Fixed NodePort for easy local access (http://localhost:30080)
 
 # Environment variables for local development
 env:
   # Next.js configuration
   NODE_ENV: "development"  # Development mode for hot reload and debugging
-  NEXT_PUBLIC_API_URL: "http://localhost:30081"  # Backend API NodePort
+  NEXT_PUBLIC_API_URL: "http://localhost:8000"  # Backend API via port-forward
 
   # Better Auth configuration (local)
   BETTER_AUTH_SECRET: ""  # IMPORTANT: Set via --set-string
-  BETTER_AUTH_URL: "http://localhost:30080"  # Frontend NodePort
+  BETTER_AUTH_URL: "http://localhost:3000"  # Frontend via port-forward
   DATABASE_URL: ""  # IMPORTANT: Set via --set-string (for Better Auth session storage)
 
 # ConfigMap for local environment
