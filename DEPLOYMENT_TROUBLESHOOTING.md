@@ -411,6 +411,216 @@ This issue demonstrates that **idempotency must be implemented at every layer** 
 
 ---
 
+## Issue 8: Pytest Dependency Conflict in Microservices
+
+**Symptoms:**
+All 4 microservices (notification, recurring-task, audit, websocket) failed to build with error:
+```
+Cannot install -r requirements.txt and pytest==9.0.2 because these package versions have conflicting dependencies.
+The conflict is caused by:
+    The user requested pytest==9.0.2
+    pytest-asyncio 0.26.0 depends on pytest<9 and >=8.2
+```
+
+**Root Cause:**
+- pytest 9.0.2 is incompatible with pytest-asyncio 0.26.0
+- pytest-asyncio 0.26.0 requires pytest<9
+
+**Solution:**
+Changed pytest version from 9.0.2 to 8.3.4 in all microservice requirements.txt files:
+
+```bash
+sed -i 's/pytest==9.0.2/pytest==8.3.4/' \
+  ./services/websocket-service/requirements.txt \
+  ./services/audit-service/requirements.txt \
+  ./services/notification-service/requirements.txt \
+  ./services/recurring-task-service/requirements.txt
+```
+
+**Status:** ✅ RESOLVED - All microservice images built successfully
+
+---
+
+## Issue 9: Missing Dapr SDK in Backend
+
+**Symptoms:**
+Backend-api pod crashed with:
+```
+ModuleNotFoundError: No module named 'dapr'
+```
+
+**Root Cause:**
+- Backend code imports `from dapr.clients import DaprClient`
+- But `backend/requirements.txt` did not include Dapr SDK packages
+
+**Solution:**
+Added Dapr dependencies to `backend/requirements.txt`:
+
+```python
+# Dapr SDK
+dapr==1.14.0
+dapr-ext-grpc==1.14.0
+```
+
+**Status:** ✅ RESOLVED - Backend image rebuilt with Dapr SDK
+
+---
+
+## Issue 10: Docker Image Permission Issues
+
+**Symptoms:**
+Backend container failed with:
+```
+/usr/local/bin/python3.13: can't open file '/root/.local/bin/uvicorn': [Errno 13] Permission denied
+```
+
+Then after first fix:
+```
+ModuleNotFoundError: No module named 'uvicorn'
+```
+
+**Root Cause:**
+- Multi-stage Dockerfile installed Python packages in `/root/.local` (builder stage)
+- Runtime stage switched to non-root user `appuser`
+- User `appuser` couldn't access `/root/.local`
+- PYTHONPATH wasn't set correctly for the new location
+
+**Solution:**
+Updated `backend/Dockerfile`:
+
+```dockerfile
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser
+
+# Copy Python dependencies from builder to appuser's home
+COPY --from=builder /root/.local /home/appuser/.local
+RUN chown -R appuser:appuser /home/appuser/.local
+
+# Make sure scripts and modules in .local are usable
+ENV PATH=/home/appuser/.local/bin:$PATH
+ENV PYTHONPATH=/home/appuser/.local/lib/python3.13/site-packages:$PYTHONPATH
+
+# Copy application code
+COPY . .
+RUN chown -R appuser:appuser /app
+
+USER appuser
+```
+
+**Status:** ✅ RESOLVED - Backend container runs successfully as non-root user
+
+---
+
+## Issue 11: Helm Chart SecurityContext Invalid Fields
+
+**Symptoms:**
+Deployment warnings:
+```
+Warning: unknown field "spec.template.spec.securityContext.capabilities"
+```
+
+**Root Cause:**
+- `capabilities` field is only valid at **container level**, not pod level
+- Helm charts had `capabilities` defined in pod-level `securityContext`
+
+**Solution:**
+Fixed all Helm chart `values.yaml` files:
+
+```yaml
+# Before (WRONG - pod level)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  capabilities:  # ❌ Invalid at pod level
+    drop:
+      - ALL
+
+# After (CORRECT)
+securityContext:
+  # runAsNonRoot: true  # Commented out for Dapr compatibility
+  # runAsUser: 1000
+  fsGroup: 1000
+  # capabilities:  # Not valid at pod level, should be at container level
+  #   drop:
+  #     - ALL
+```
+
+Applied to all services:
+- backend-api
+- frontend
+- notification-service
+- recurring-task-service
+- audit-service
+- websocket-service
+
+**Status:** ✅ RESOLVED - No more validation warnings
+
+---
+
+## Issue 12: Dapr Sidecar RunAsUser Policy Conflict
+
+**Symptoms:**
+Dapr sidecar injection fails with:
+```
+Error: container's runAsUser breaks non-root policy
+(pod: "backend-api-...", container: daprd)
+```
+
+Pod stuck in `CreateContainerConfigError` state.
+
+**Root Cause:**
+- Dapr sidecar container (`daprd`) has specific security requirements
+- Kubernetes pod security policy or admission controller blocking the sidecar
+- Conflict between:
+  - Pod-level `securityContext.runAsUser` settings
+  - Dapr sidecar's user requirements
+  - Minikube's default security policies
+
+**Potential Solutions:**
+
+**Option 1: Adjust Minikube Pod Security Standards (RECOMMENDED)**
+```bash
+# Check current PSA enforcement
+kubectl label --dry-run=server --overwrite ns default \
+  pod-security.kubernetes.io/enforce=privileged
+
+# Apply privileged PSA for default namespace (LOCAL ONLY)
+kubectl label ns default pod-security.kubernetes.io/enforce=privileged
+```
+
+**Option 2: Configure Dapr to Run as Non-Root**
+Create custom Dapr configuration:
+
+```yaml
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: dapr-config-local
+spec:
+  tracing:
+    samplingRate: "1"
+  mtls:
+    enabled: true
+    allowedClockSkew: 15m
+  # Add sidecar configuration
+  sidecarRunAsNonRoot: true
+  sidecarReadOnlyRootFilesystem: true
+```
+
+**Option 3: Remove Pod-Level SecurityContext**
+In Helm chart `values-local.yaml`:
+
+```yaml
+securityContext:
+  # Remove runAsNonRoot and runAsUser for Dapr compatibility
+  fsGroup: 1000
+```
+
+**Status:** ✅ RESOLVED - Adjusted securityContext in Helm charts for Dapr compatibility
+
+---
+
 ## Minikube Debug Commands
 
 ```bash
