@@ -12,6 +12,8 @@ Three-tier architecture for AI-powered applications:
 - **Backend**: FastAPI + JWT validation
 - **MCP Server**: FastMCP + PostgreSQL tools
 
+> **Note:** For Better Auth setup and authentication configuration, see the **[better-auth-next-app-router](../better-auth-next-app-router/SKILL.md)** skill. This skill focuses on the full-stack architecture and deployment patterns.
+
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │  Next.js        │───▶│  FastAPI        │───▶│  MCP Server     │
@@ -246,9 +248,10 @@ OPENAI_API_KEY=sk-...
 | User can't see data | user_id mismatch | Check JWT payload, DB records |
 | CORS errors | Origin not allowed | Add frontend URL to allow_origins |
 | MCP timeout | Deadlock (mounted mode) | Run MCP as separate service |
-| ETIMEDOUT in K8s | Node.js Happy Eyeballs | Disable autoSelectFamily |
+| ETIMEDOUT in K8s | Node.js Happy Eyeballs | Disable autoSelectFamily (see better-auth skill) |
 | Duplicate tasks | OpenAI SDK duplicate calls | Add MCP tool cache |
-| JWKS decrypt error | Secret changed | Clean jwks table |
+| JWKS decrypt error | Secret changed | `DELETE FROM jwks; kubectl rollout restart frontend` |
+| Sign-in redirect loop | JWKS/secret mismatch | See better-auth skill for detailed fix |
 
 **For comprehensive troubleshooting, see [troubleshooting.md](troubleshooting.md).**
 
@@ -318,7 +321,7 @@ kubectl rollout restart deployment frontend backend-api
 
 ## Related Skills
 
-- **better-auth-next-app-router** - Frontend auth
-- **fastapi-jwt-auth-setup** - Backend JWT
-- **fastmcp-database-tools** - MCP implementation
-- **openai-chatkit-integration** - ChatKit UI
+- **better-auth-next-app-router** - Better Auth setup, EdDSA JWT signing, auth-specific K8s troubleshooting
+- **fastapi-jwt-auth-setup** - Backend JWT validation middleware
+- **fastmcp-database-tools** - MCP server implementation patterns
+- **openai-chatkit-integration** - ChatKit UI integration

@@ -1,6 +1,6 @@
 ---
 name: better-auth-next-app-router
-description: Set up Better Auth in Next.js 15+ App Router with EdDSA JWT signing, JWKS endpoint, PostgreSQL storage, and client-side session management. Works with FastAPI JWT validation. Includes Kubernetes deployment patterns with fixes for Node.js Happy Eyeballs ETIMEDOUT issues, JWKS cleanup after secret changes, and Next.js standalone build configuration for containerized environments.
+description: Set up Better Auth in Next.js 15+ App Router with EdDSA JWT signing, JWKS endpoint, PostgreSQL storage, and client-side session management. Works with FastAPI JWT validation. For Kubernetes deployment patterns, see nextjs-fastapi-mcp-architecture skill.
 ---
 
 # Better Auth Setup in Next.js App Router
@@ -99,55 +99,34 @@ fetch(API_URL, {
 
 ## Kubernetes Deployment
 
-For deploying to Kubernetes (Minikube, EKS, GKE, AKS), see **[kubernetes.md](kubernetes.md)**.
+> **Note:** For complete Kubernetes deployment with Helm charts, Dapr integration, and full-stack deployment patterns, see the **[nextjs-fastapi-mcp-architecture](../nextjs-fastapi-mcp-architecture/SKILL.md)** skill.
 
-### Quick Fix: ETIMEDOUT in Kubernetes
+### Quick Setup for Better Auth in Kubernetes
 
-If Next.js can't connect to database in containers:
+Better Auth works seamlessly in Kubernetes with proper configuration:
 
-```typescript
-// Add to lib/auth.ts BEFORE creating Pool
-import dns from "dns";
-import net from "net";
+1. **Apply Happy Eyeballs fix** in `lib/auth.ts`:
+   ```typescript
+   import dns from "dns";
+   import net from "net";
 
-net.setDefaultAutoSelectFamily(false);
-dns.setDefaultResultOrder("ipv4first");
-```
+   net.setDefaultAutoSelectFamily(false);
+   dns.setDefaultResultOrder("ipv4first");
+   ```
 
-### Quick Fix: Sign-in Redirect Loop After Secret Change
+2. **Configure secrets** (must match between frontend and backend):
+   ```bash
+   SECRET=$(openssl rand -base64 32)
+   kubectl create secret generic auth-secret --from-literal=better-auth-secret="$SECRET"
+   ```
 
-```bash
-psql $DATABASE_URL -c "DELETE FROM jwks;"
-kubectl rollout restart deployment frontend
-```
+3. **If you change the secret**, clean the JWKS table:
+   ```bash
+   psql $DATABASE_URL -c "DELETE FROM jwks;"
+   kubectl rollout restart deployment frontend
+   ```
 
-### Kubernetes Secrets
-
-```bash
-# Create matching secrets for frontend and backend
-SECRET=$(openssl rand -base64 32)
-kubectl create secret generic auth-secret --from-literal=better-auth-secret="$SECRET"
-
-# Verify secrets match
-kubectl get secret frontend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
-kubectl get secret backend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
-```
-
-### Next.js Standalone Build
-
-**next.config.ts:**
-```typescript
-const nextConfig = {
-  output: "standalone",
-  serverExternalPackages: ["ws", "pg"],
-};
-```
-
-**Dockerfile** - Copy external packages:
-```dockerfile
-COPY --from=builder /app/node_modules/ws ./node_modules/ws
-COPY --from=builder /app/node_modules/pg ./node_modules/pg
-```
+For detailed Kubernetes troubleshooting, Helm charts, and Dockerfile configuration, see **[kubernetes.md](kubernetes.md)** or the nextjs-fastapi-mcp-architecture skill.
 
 ---
 
@@ -213,7 +192,7 @@ async def verify_token(token: str) -> str:
 | File | Content |
 |------|---------|
 | [reference.md](reference.md) | Complete implementation steps, database schema, patterns |
-| [kubernetes.md](kubernetes.md) | K8s deployment, Happy Eyeballs fix, Helm charts, Dockerfile |
+| [kubernetes.md](kubernetes.md) | **Auth-specific** K8s troubleshooting (Happy Eyeballs, JWKS cleanup). For full-stack deployment, see nextjs-fastapi-mcp-architecture |
 | [examples.md](examples.md) | Working code examples |
 | [templates.md](templates.md) | Copy-paste ready templates |
 
@@ -227,5 +206,6 @@ async def verify_token(token: str) -> str:
 
 ## Related Skills
 
-- **fastapi-jwt-auth-setup** - Backend JWT validation
-- **nextjs-fastapi-mcp-architecture** - Full-stack architecture
+- **nextjs-fastapi-mcp-architecture** - Full-stack architecture with Kubernetes deployment
+- **fastapi-jwt-auth-setup** - Backend JWT validation middleware
+- **openai-chatkit-integration** - AI chat UI with Better Auth integration

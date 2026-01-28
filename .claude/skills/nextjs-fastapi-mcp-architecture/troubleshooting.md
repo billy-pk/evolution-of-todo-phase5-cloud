@@ -19,6 +19,8 @@ This guide documents real production issues encountered during Kubernetes/Miniku
 
 ## 1. Node.js Happy Eyeballs ETIMEDOUT in Kubernetes
 
+> **Note:** For detailed Better Auth configuration and authentication-specific troubleshooting, see the **[better-auth-next-app-router](../better-auth-next-app-router/SKILL.md)** skill.
+
 ### Symptoms
 ```
 Error: AggregateError
@@ -73,6 +75,8 @@ kubectl rollout restart deployment frontend
 ---
 
 ## 2. JWKS Decryption Error After Secret Change
+
+> **Note:** This issue is related to Better Auth. For complete Better Auth setup and configuration, see the **[better-auth-next-app-router](../better-auth-next-app-router/SKILL.md)** skill.
 
 ### Symptoms
 ```
