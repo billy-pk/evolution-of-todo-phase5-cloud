@@ -1,74 +1,39 @@
 # Kubernetes Deployment Guide for FastAPI JWT Auth
 
-This guide covers deploying FastAPI with JWT authentication to Kubernetes environments.
+This guide covers **backend-specific JWT validation concerns** in Kubernetes environments.
 
-## Table of Contents
-
-1. [Secrets Management](#secrets-management)
-2. [JWKS Endpoint Accessibility](#jwks-endpoint-accessibility)
-3. [Helm Chart Configuration](#helm-chart-configuration)
-4. [Dockerfile for FastAPI](#dockerfile-for-fastapi)
-5. [Troubleshooting](#troubleshooting)
+> **Note:** For complete Kubernetes deployment with Helm charts, secrets management, and full-stack deployment patterns, see the **[nextjs-fastapi-mcp-architecture](../nextjs-fastapi-mcp-architecture/SKILL.md)** skill. This guide focuses exclusively on JWT validation debugging and backend-specific issues.
 
 ---
 
-## Secrets Management
+## Table of Contents
 
-### Creating Kubernetes Secrets
+1. [Prerequisites](#prerequisites)
+2. [JWKS Endpoint Accessibility](#jwks-endpoint-accessibility)
+3. [Backend JWT Configuration](#backend-jwt-configuration)
+4. [Troubleshooting JWT Validation](#troubleshooting-jwt-validation)
+5. [Advanced Patterns](#advanced-patterns)
 
-JWT authentication requires matching secrets between frontend (Better Auth) and backend (FastAPI):
+---
 
+## Prerequisites
+
+Before debugging JWT validation, ensure:
+
+1. **Frontend and backend are deployed** - See nextjs-fastapi-mcp-architecture skill
+2. **Secrets are configured** - Frontend and backend must share `BETTER_AUTH_SECRET`
+3. **Services are accessible** - Pods can reach each other via Kubernetes DNS
+
+**Quick verification:**
 ```bash
-# Generate a secure secret (32+ characters)
-SECRET=$(openssl rand -base64 32)
-
-# Create backend secret
-kubectl create secret generic backend-secrets \
-  --from-literal=better-auth-secret="$SECRET" \
-  --from-literal=database-url="postgresql://user:pass@host:5432/db"
-
-# Create frontend secret (must match!)
-kubectl create secret generic frontend-secrets \
-  --from-literal=better-auth-secret="$SECRET" \
-  --from-literal=database-url="postgresql://user:pass@host:5432/db"
-```
-
-### Verifying Secrets Match
-
-**Critical**: Frontend and backend MUST have identical `BETTER_AUTH_SECRET`:
-
-```bash
-# Check backend secret
+# Verify secrets match (critical for JWT validation)
 kubectl get secret backend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
-echo ""
-
-# Check frontend secret
 kubectl get secret frontend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
-echo ""
+# These MUST be identical
 
-# They MUST be EXACTLY the same - character for character
+# Check both services exist
+kubectl get svc frontend backend-api
 ```
-
-### Updating Secrets
-
-```bash
-SECRET="YourNewSecretHere"
-
-# Update both secrets atomically
-kubectl patch secret backend-secrets -p "{\"data\":{\"better-auth-secret\":\"$(echo -n $SECRET | base64 -w0)\"}}"
-kubectl patch secret frontend-secrets -p "{\"data\":{\"better-auth-secret\":\"$(echo -n $SECRET | base64 -w0)\"}}"
-
-# Restart deployments to pick up new secrets
-kubectl rollout restart deployment backend-api frontend
-```
-
-### Common Secret Issues
-
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| JWT signature invalid | Secrets don't match | Verify secrets are identical |
-| 401 on all requests | Backend can't reach JWKS | Check JWKS_URL and network |
-| Intermittent 401s | Secret rotation mid-flight | Restart both services after change |
 
 ---
 
@@ -76,39 +41,30 @@ kubectl rollout restart deployment backend-api frontend
 
 ### The Problem
 
-In Kubernetes, the backend must reach the frontend's JWKS endpoint to validate JWTs:
+In Kubernetes, the FastAPI backend must reach the frontend's JWKS endpoint to validate JWTs:
 
 ```
-Backend Pod → http://frontend:3000/api/auth/jwks → Public Keys
+User → Frontend → Backend (validates JWT) → Frontend JWKS endpoint → Public Keys
 ```
 
-### Configuration
+If the backend cannot reach the JWKS endpoint, **all authenticated requests will fail with 401**.
 
-**Backend environment variables:**
+### Testing JWKS Accessibility
 
-```yaml
-env:
-  - name: BETTER_AUTH_URL
-    value: "http://frontend:3000"  # K8s service DNS
-  # OR explicit JWKS URL
-  - name: BETTER_AUTH_JWKS_URL
-    value: "http://frontend:3000/api/auth/jwks"
-```
-
-### Testing JWKS Accessibility from Pod
+**From backend pod (most reliable test):**
 
 ```bash
 # Get backend pod name
-BACKEND_POD=$(kubectl get pods -l app=backend-api -o jsonpath='{.items[0].metadata.name}')
+BACKEND_POD=$(kubectl get pods -l app.kubernetes.io/name=backend-api -o jsonpath='{.items[0].metadata.name}')
 
 # Test JWKS endpoint from inside backend pod
 kubectl exec $BACKEND_POD -- curl -s http://frontend:3000/api/auth/jwks
 
-# Should return JSON with keys array:
+# Expected output:
 # {"keys":[{"kty":"OKP","crv":"Ed25519","x":"...","kid":"..."}]}
 ```
 
-### Testing with Python from Pod
+**Using Python from pod (matches middleware behavior):**
 
 ```bash
 kubectl exec $BACKEND_POD -- python3 -c "
@@ -119,9 +75,9 @@ url = 'http://frontend:3000/api/auth/jwks'
 try:
     response = urllib.request.urlopen(url, timeout=5)
     data = json.loads(response.read())
-    print(f'JWKS OK - {len(data.get(\"keys\", []))} keys found')
+    print(f'✓ JWKS OK - {len(data.get(\"keys\", []))} keys found')
 except Exception as e:
-    print(f'JWKS ERROR: {e}')
+    print(f'✗ JWKS ERROR: {e}')
 "
 ```
 
@@ -129,312 +85,406 @@ except Exception as e:
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Connection refused | Frontend service not ready | Check frontend pod status |
+| Connection refused | Frontend service not ready | `kubectl get pods -l app=frontend` |
 | DNS resolution failed | Wrong service name | Use `frontend` not `frontend-service` |
 | Timeout | Network policy blocking | Check NetworkPolicy rules |
-| 404 Not Found | Better Auth not configured | Verify frontend auth routes |
+| 404 Not Found | Better Auth not configured | Verify `app/api/auth/[...all]/route.ts` exists |
+| Empty keys array | JWKS not generated | Check frontend logs, restart frontend |
 
 ---
 
-## Helm Chart Configuration
+## Backend JWT Configuration
 
-### values.yaml for Backend
+### Environment Variables
+
+**Critical for JWT validation:**
 
 ```yaml
-replicaCount: 1
-
-image:
-  repository: backend-api
-  tag: latest
-  pullPolicy: Never  # Use local images in Minikube
-
-service:
-  type: ClusterIP
-  port: 8000
-
 env:
-  - name: DATABASE_URL
-    valueFrom:
-      secretKeyRef:
-        name: postgres-credentials
-        key: database-url
+  # Option 1: Use base URL (middleware constructs JWKS URL)
+  - name: BETTER_AUTH_URL
+    value: "http://frontend:3000"  # K8s service DNS name
+
+  # Option 2: Explicit JWKS URL (overrides base URL)
+  - name: BETTER_AUTH_JWKS_URL
+    value: "http://frontend:3000/api/auth/jwks"
+
+  # Secret MUST match frontend secret
   - name: BETTER_AUTH_SECRET
     valueFrom:
       secretKeyRef:
         name: better-auth-secret
         key: better-auth-secret
-  - name: BETTER_AUTH_URL
-    value: "http://frontend:3000"
-  - name: OPENAI_API_KEY
-    valueFrom:
-      secretKeyRef:
-        name: openai-credentials
-        key: openai-api-key
-  - name: ENVIRONMENT
-    value: "production"
-
-resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 256Mi
-
-livenessProbe:
-  httpGet:
-    path: /health
-    port: 8000
-  initialDelaySeconds: 30
-  periodSeconds: 10
-
-readinessProbe:
-  httpGet:
-    path: /health
-    port: 8000
-  initialDelaySeconds: 5
-  periodSeconds: 5
 ```
 
-### Deployment Template
+### Middleware Configuration
 
-```yaml
-# templates/deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ include "backend-api.fullname" . }}
-spec:
-  replicas: {{ .Values.replicaCount }}
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: {{ include "backend-api.name" . }}
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: {{ include "backend-api.name" . }}
-    spec:
-      containers:
-        - name: {{ .Chart.Name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          ports:
-            - containerPort: 8000
-          env:
-            {{- toYaml .Values.env | nindent 12 }}
-          livenessProbe:
-            {{- toYaml .Values.livenessProbe | nindent 12 }}
-          readinessProbe:
-            {{- toYaml .Values.readinessProbe | nindent 12 }}
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+**middleware.py:**
+
+```python
+import os
+from jwt import PyJWKClient
+
+# Construct JWKS URL
+BETTER_AUTH_URL = os.getenv("BETTER_AUTH_URL", "http://localhost:3000")
+JWKS_URL = os.getenv("BETTER_AUTH_JWKS_URL") or f"{BETTER_AUTH_URL}/api/auth/jwks"
+
+# Initialize JWKS client
+jwks_client = PyJWKClient(JWKS_URL)
 ```
 
----
-
-## Dockerfile for FastAPI
-
-### Multi-Stage Production Dockerfile
-
-```dockerfile
-FROM python:3.13-slim AS builder
-
-WORKDIR /app
-
-# Install uv for fast dependency management
-RUN pip install uv
-
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
-
-# Install dependencies
-RUN uv sync --frozen --no-dev
-
-# Production stage
-FROM python:3.13-slim AS runner
-
-WORKDIR /app
-
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash appuser
-
-# Copy virtual environment from builder
-COPY --from=builder /app/.venv /app/.venv
-
-# Copy application code
-COPY --chown=appuser:appuser . .
-
-# Set environment
-ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONUNBUFFERED=1
-
-USER appuser
-
-EXPOSE 8000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
-
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-### Building for Minikube
+### Testing Configuration from Pod
 
 ```bash
-# Use Minikube's Docker daemon
-eval $(minikube docker-env)
+# Check environment variables
+kubectl exec $BACKEND_POD -- env | grep -E "(AUTH|JWKS)"
 
-# Build the image
-docker build -t backend-api:latest ./backend
-
-# Verify image exists
-docker images | grep backend-api
-
-# Deploy with Helm
-helm upgrade --install backend-api ./infrastructure/helm/backend-api \
-  -f ./infrastructure/helm/backend-api/values-local.yaml
+# Should see:
+# BETTER_AUTH_URL=http://frontend:3000
+# BETTER_AUTH_SECRET=<secret>
+# (or BETTER_AUTH_JWKS_URL if explicitly set)
 ```
 
 ---
 
-## Troubleshooting
+## Troubleshooting JWT Validation
 
 ### Issue: 401 Unauthorized on All Requests
 
-**Check 1: JWKS endpoint accessible?**
+**Symptoms:**
+- All authenticated API requests return 401
+- Backend logs show JWT validation errors
+- Frontend authentication works (users can sign in)
+
+**Diagnosis Steps:**
+
+**Step 1: Verify JWKS endpoint is reachable**
 ```bash
+BACKEND_POD=$(kubectl get pods -l app.kubernetes.io/name=backend-api -o jsonpath='{.items[0].metadata.name}')
 kubectl exec $BACKEND_POD -- curl -s http://frontend:3000/api/auth/jwks
+
+# If this fails → JWKS connectivity issue
+# If this succeeds → Check secrets or backend logs
 ```
 
-**Check 2: Secrets match?**
+**Step 2: Verify secrets match**
 ```bash
-# Compare these outputs - must be identical
+# Compare these outputs - must be EXACTLY identical
 kubectl get secret backend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
+echo ""
 kubectl get secret frontend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
+echo ""
+
+# If different → Update secrets to match
 ```
 
-**Check 3: Frontend generating JWTs correctly?**
+**Step 3: Check backend logs for JWT errors**
 ```bash
-kubectl logs -l app=frontend --tail=50 | grep -i jwt
+kubectl logs -l app.kubernetes.io/name=backend-api --tail=50 | grep -i "jwt\|auth\|401"
+
+# Look for:
+# - "Invalid signature" → Secrets mismatch
+# - "Unable to find matching key" → JWKS not accessible
+# - "Token expired" → Clock skew or expired token
 ```
+
+**Step 4: Check frontend is generating JWTs**
+```bash
+kubectl logs -l app.kubernetes.io/name=frontend --tail=50 | grep -i jwt
+
+# Should see sign-in events, no decryption errors
+```
+
+---
 
 ### Issue: JWT Signature Invalid
 
-**Cause**: Usually secrets mismatch or JWKS cache stale.
+**Symptoms:**
+```
+PyJWTError: Signature verification failed
+```
 
-**Fix**:
+**Cause:** Usually secrets mismatch or stale JWKS cache.
+
+**Fix:**
+
 ```bash
 # 1. Verify secrets match (see above)
 
 # 2. Restart backend to clear JWKS cache
 kubectl rollout restart deployment backend-api
 
-# 3. If still failing, restart both
+# 3. If still failing, check frontend JWKS
+kubectl exec $BACKEND_POD -- curl -s http://frontend:3000/api/auth/jwks | jq .
+
+# 4. Restart both services
 kubectl rollout restart deployment backend-api frontend
 ```
 
+---
+
 ### Issue: Connection Refused to JWKS
 
-**Cause**: Frontend service not ready or wrong URL.
+**Symptoms:**
+```
+ConnectionError: Connection refused
+URLError: <urlopen error [Errno 111] Connection refused>
+```
 
-**Fix**:
+**Cause:** Frontend service not ready or wrong URL.
+
+**Fix:**
+
 ```bash
-# Check frontend service exists
+# Check frontend service exists and has endpoints
 kubectl get svc frontend
-
-# Check frontend pods are running
-kubectl get pods -l app=frontend
-
-# Check endpoints are populated
 kubectl get endpoints frontend
+
+# If no endpoints → Frontend pods not ready
+kubectl get pods -l app.kubernetes.io/name=frontend
+
+# Check frontend pod status
+kubectl describe pod <frontend-pod-name>
 
 # Test DNS resolution from backend
 kubectl exec $BACKEND_POD -- nslookup frontend
+
+# If DNS fails → Check service name matches deployment
+kubectl get svc | grep frontend
 ```
+
+---
 
 ### Issue: Intermittent 401 Errors
 
-**Cause**: JWKS key rotation or pod restarts.
+**Symptoms:**
+- Most requests succeed
+- Occasional 401 errors
+- No pattern to failures
 
-**Fix**: Implement JWKS caching with refresh:
+**Cause:** JWKS key rotation or pod restarts.
+
+**Fix:** Implement JWKS caching with refresh:
 
 ```python
 # In middleware.py
 from functools import lru_cache
 import time
 
-_jwks_cache = {"keys": None, "fetched_at": 0}
+_jwks_cache = {"client": None, "fetched_at": 0}
 JWKS_CACHE_TTL = 3600  # 1 hour
 
 def get_jwks_client():
+    """Get JWKS client with caching."""
     now = time.time()
-    if _jwks_cache["keys"] is None or (now - _jwks_cache["fetched_at"]) > JWKS_CACHE_TTL:
-        _jwks_cache["keys"] = PyJWKClient(JWKS_URL)
+    if _jwks_cache["client"] is None or (now - _jwks_cache["fetched_at"]) > JWKS_CACHE_TTL:
+        _jwks_cache["client"] = PyJWKClient(JWKS_URL)
         _jwks_cache["fetched_at"] = now
-    return _jwks_cache["keys"]
+    return _jwks_cache["client"]
+
+# Use in verify_token
+def verify_token(token: str) -> str | None:
+    try:
+        jwks_client = get_jwks_client()
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        payload = jwt.decode(token, signing_key.key, algorithms=["EdDSA", "ES256", "RS256"])
+        return payload.get("user_id") or payload.get("sub")
+    except jwt.PyJWTError:
+        return None
 ```
 
-### Debug Commands
+---
+
+### Issue: Token Expired Errors
+
+**Symptoms:**
+```
+jwt.ExpiredSignatureError: Signature has expired
+```
+
+**Cause:** Token TTL exceeded or clock skew between frontend/backend.
+
+**Fix:**
 
 ```bash
-# Check all pods status
+# Check pod clocks are synchronized
+kubectl exec $BACKEND_POD -- date
+kubectl exec $FRONTEND_POD -- date
+
+# If clocks differ > 30 seconds → NTP issue
+# For Minikube, restart minikube to sync time:
+minikube stop && minikube start
+
+# For cloud K8s → Check node time synchronization
+```
+
+---
+
+## Advanced Patterns
+
+### Multi-Provider JWT Validation
+
+Support multiple auth providers (Better Auth + Auth0):
+
+```python
+# middleware.py
+from typing import Dict, List
+
+AUTH_PROVIDERS = {
+    "better-auth": {
+        "jwks_url": "http://frontend:3000/api/auth/jwks",
+        "algorithms": ["EdDSA", "ES256"],
+        "user_claim": "user_id",
+    },
+    "auth0": {
+        "jwks_url": "https://your-domain.auth0.com/.well-known/jwks.json",
+        "algorithms": ["RS256"],
+        "user_claim": "sub",
+    },
+}
+
+def verify_token_multi_provider(token: str) -> str | None:
+    """Try validating token against multiple providers."""
+    for provider_name, config in AUTH_PROVIDERS.items():
+        try:
+            jwks_client = PyJWKClient(config["jwks_url"])
+            signing_key = jwks_client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token, signing_key.key,
+                algorithms=config["algorithms"],
+                options={"verify_exp": True}
+            )
+            user_id = payload.get(config["user_claim"])
+            if user_id:
+                return user_id
+        except jwt.PyJWTError:
+            continue  # Try next provider
+    return None  # No provider validated token
+```
+
+### JWT Validation with User Context Injection
+
+Inject user context into request state for dependency injection:
+
+```python
+# middleware.py
+from fastapi import Request, HTTPException
+
+class JWTBearer(HTTPBearer):
+    async def __call__(self, request: Request):
+        credentials = await super().__call__(request)
+
+        if not credentials or credentials.scheme != "Bearer":
+            raise HTTPException(status_code=401, detail="Invalid auth scheme")
+
+        user_id = verify_token(credentials.credentials)
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        # Inject user context into request state
+        request.state.user_id = user_id
+        request.state.authenticated = True
+
+        return credentials.credentials
+
+# Usage in routes
+from fastapi import Depends, Request
+
+async def get_current_user(request: Request) -> str:
+    """Dependency to get current user from request state."""
+    if not hasattr(request.state, "user_id"):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return request.state.user_id
+
+@app.get("/api/{user_id}/tasks")
+async def get_tasks(
+    user_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    # Verify path user_id matches token user_id
+    if user_id != current_user:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    return {"tasks": []}
+```
+
+---
+
+## Debug Commands Reference
+
+```bash
+# Get pod names
+BACKEND_POD=$(kubectl get pods -l app.kubernetes.io/name=backend-api -o jsonpath='{.items[0].metadata.name}')
+FRONTEND_POD=$(kubectl get pods -l app.kubernetes.io/name=frontend -o jsonpath='{.items[0].metadata.name}')
+
+# Check all services
+kubectl get svc
+
+# Check pod status
 kubectl get pods -o wide
 
-# Check backend logs
-kubectl logs -l app=backend-api --tail=100
+# Check backend logs for JWT errors
+kubectl logs $BACKEND_POD --tail=100 | grep -i "jwt\|401\|auth"
 
-# Check frontend logs
-kubectl logs -l app=frontend --tail=100
+# Check frontend logs for auth errors
+kubectl logs $FRONTEND_POD --tail=100 | grep -i "auth\|jwks"
+
+# Test JWKS from backend
+kubectl exec $BACKEND_POD -- curl -s http://frontend:3000/api/auth/jwks | jq .
+
+# Check environment variables
+kubectl exec $BACKEND_POD -- env | grep -E "(AUTH|JWKS|SECRET)"
+
+# Verify secrets match
+kubectl get secret backend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d && echo
+kubectl get secret frontend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d && echo
 
 # Describe pod for events
 kubectl describe pod $BACKEND_POD
 
-# Check environment variables in pod
-kubectl exec $BACKEND_POD -- env | grep -E "(AUTH|JWKS|SECRET)"
-
 # Port forward for local testing
-kubectl port-forward svc/backend-api 8000:8000
+kubectl port-forward svc/backend-api 8000:8000 &
+kubectl port-forward svc/frontend 3000:3000 &
 
-# Test health endpoint
-curl http://localhost:8000/health
-
-# Test protected endpoint without token (should 401)
-curl http://localhost:8000/api/test-user/tasks
-
-# Test with valid token from frontend
-TOKEN=$(curl -s http://localhost:3000/api/auth/token | jq -r '.token')
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/test-user/tasks
+# Restart services
+kubectl rollout restart deployment backend-api
+kubectl rollout restart deployment frontend
 ```
+
+---
+
+## Related Documentation
+
+- **[nextjs-fastapi-mcp-architecture](../nextjs-fastapi-mcp-architecture/kubernetes.md)** - Complete Kubernetes deployment with Helm charts, secrets management, and multi-service orchestration
+- **[better-auth-next-app-router](../better-auth-next-app-router/kubernetes.md)** - Frontend-specific Kubernetes issues (Happy Eyeballs fix, JWKS cleanup)
+- **[SKILL.md](SKILL.md)** - FastAPI JWT authentication middleware implementation
 
 ---
 
 ## Quick Reference
 
-### Required Environment Variables
+### Environment Variables (Backend)
 
-| Variable | Source | Description |
-|----------|--------|-------------|
-| `BETTER_AUTH_SECRET` | Secret | Must match frontend |
-| `BETTER_AUTH_URL` | ConfigMap | Frontend service URL |
-| `DATABASE_URL` | Secret | PostgreSQL connection |
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `BETTER_AUTH_URL` | Yes (or JWKS_URL) | Frontend service URL | `http://frontend:3000` |
+| `BETTER_AUTH_JWKS_URL` | No | Explicit JWKS URL | `http://frontend:3000/api/auth/jwks` |
+| `BETTER_AUTH_SECRET` | Yes | Shared secret (must match frontend) | `<32+ char secret>` |
 
-### Key Files
+### Critical Checks
 
-| File | Purpose |
-|------|---------|
-| `middleware.py` | JWT validation with JWKS |
-| `config.py` | Settings with BETTER_AUTH_URL |
-| `values.yaml` | Helm chart configuration |
+1. ✅ JWKS endpoint reachable from backend pod
+2. ✅ Secrets match exactly between frontend and backend
+3. ✅ Frontend service has ready endpoints
+4. ✅ Backend logs show no JWT validation errors
+5. ✅ Clock synchronization (for exp claim validation)
 
-### Verification Commands
+### Common 401 Fixes
 
-```bash
-# Secrets match
-kubectl get secret backend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
-
-# JWKS accessible
-kubectl exec $BACKEND_POD -- curl -s http://frontend:3000/api/auth/jwks
-
-# Health check
-kubectl exec $BACKEND_POD -- curl -s http://localhost:8000/health
-```
+| Issue | Quick Fix |
+|-------|-----------|
+| JWKS unreachable | `kubectl exec $BACKEND_POD -- curl http://frontend:3000/api/auth/jwks` |
+| Secrets mismatch | Verify secrets, update if needed, restart pods |
+| Stale cache | `kubectl rollout restart deployment backend-api` |
+| Frontend not ready | `kubectl get pods -l app=frontend` |
+| Wrong algorithms | Check middleware algorithms match JWT `alg` |

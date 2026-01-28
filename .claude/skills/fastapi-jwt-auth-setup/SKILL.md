@@ -1,6 +1,6 @@
 ---
 name: fastapi-jwt-auth-setup
-description: Set up JWT authentication middleware for FastAPI projects using JWKS validation. Use when adding JWT authentication to a new FastAPI project, integrating with Better Auth, Auth0, Clerk, or any JWKS-based auth provider, or implementing multi-tenant user isolation with JWT tokens. Includes Kubernetes deployment patterns with secrets management, JWKS accessibility testing, and troubleshooting JWT validation errors in containerized environments.
+description: Set up JWT authentication middleware for FastAPI projects using JWKS validation. Use when adding JWT authentication to a new FastAPI project, integrating with Better Auth, Auth0, Clerk, or any JWKS-based auth provider, or implementing multi-tenant user isolation with JWT tokens. For full-stack Kubernetes deployment, see nextjs-fastapi-mcp-architecture skill.
 ---
 
 # FastAPI JWT Authentication Setup
@@ -113,42 +113,37 @@ async def get_tasks(user_id: str = Depends(verify_user_access)):
 
 ## Kubernetes Deployment
 
-For deploying to Kubernetes, see **[kubernetes.md](kubernetes.md)**.
+> **Note:** For complete Kubernetes deployment with Helm charts and full-stack deployment patterns, see the **[nextjs-fastapi-mcp-architecture](../nextjs-fastapi-mcp-architecture/SKILL.md)** skill. This section covers backend-specific JWT validation concerns only.
 
-### Quick: Verify Secrets Match
+### Backend-Specific JWT Configuration
 
-```bash
-# Backend secret
-kubectl get secret backend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
+**Critical for JWT validation in Kubernetes:**
 
-# Frontend secret (must match!)
-kubectl get secret frontend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
-```
+1. **JWKS Endpoint Must Be Reachable**
+   ```bash
+   # Test JWKS accessibility from backend pod
+   BACKEND_POD=$(kubectl get pods -l app=backend-api -o jsonpath='{.items[0].metadata.name}')
+   kubectl exec $BACKEND_POD -- curl -s http://frontend:3000/api/auth/jwks
+   ```
 
-### Quick: Test JWKS from Pod
+2. **Secrets Must Match Between Frontend and Backend**
+   ```bash
+   # Quick verification
+   kubectl get secret backend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
+   kubectl get secret frontend-secrets -o jsonpath='{.data.better-auth-secret}' | base64 -d
+   # These MUST be identical
+   ```
 
-```bash
-BACKEND_POD=$(kubectl get pods -l app=backend-api -o jsonpath='{.items[0].metadata.name}')
-kubectl exec $BACKEND_POD -- curl -s http://frontend:3000/api/auth/jwks
-```
+3. **Environment Variables**
+   ```yaml
+   env:
+     - name: BETTER_AUTH_URL
+       value: "http://frontend:3000"  # K8s service DNS
+     - name: BETTER_AUTH_JWKS_URL
+       value: "http://frontend:3000/api/auth/jwks"
+   ```
 
-### Helm Values for Backend
-
-```yaml
-env:
-  - name: BETTER_AUTH_URL
-    value: "http://frontend:3000"
-  - name: BETTER_AUTH_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: better-auth-secret
-        key: better-auth-secret
-  - name: DATABASE_URL
-    valueFrom:
-      secretKeyRef:
-        name: postgres-credentials
-        key: database-url
-```
+For detailed Kubernetes troubleshooting, see **[kubernetes.md](kubernetes.md)** (backend-specific JWT issues).
 
 ---
 
@@ -234,7 +229,7 @@ def authenticated_headers():
 | File | Content |
 |------|---------|
 | [reference.md](reference.md) | Complete implementation, templates, troubleshooting |
-| [kubernetes.md](kubernetes.md) | K8s deployment, secrets, JWKS testing, Helm charts |
+| [kubernetes.md](kubernetes.md) | **Backend-specific** JWT validation in K8s (JWKS testing, 401 debugging). For full deployment, see nextjs-fastapi-mcp-architecture |
 | [templates/](templates/) | Copy-paste ready code templates |
 
 ---
@@ -247,5 +242,6 @@ def authenticated_headers():
 
 ## Related Skills
 
-- **better-auth-next-app-router** - Frontend auth setup
-- **nextjs-fastapi-mcp-architecture** - Full-stack architecture
+- **nextjs-fastapi-mcp-architecture** - Full-stack architecture with complete Kubernetes deployment patterns
+- **better-auth-next-app-router** - Frontend Better Auth setup, EdDSA JWT signing, JWKS endpoint configuration
+- **fastmcp-database-tools** - MCP server implementation with database tools
